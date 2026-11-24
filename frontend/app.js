@@ -121,7 +121,7 @@ function buildDemoLesson() {
     items: [
       { id: 'itm_demo_1', kind: 'model', title: 'رائد الفضاء', text_ar: 'رائد الفضاء يسافر خارج الأرض في مركبة فضائية، ويرتدي بدلة خاصة تحميه وتحافظ على الهواء والأكسجين حوله.', text_en: 'An astronaut travels into space wearing a special suit that protects them and supplies air.', file_url: SAMPLE_MODELS + 'Astronaut.glb', glb_url: SAMPLE_MODELS + 'Astronaut.glb', placement: 'floor', size: 'medium', audio_url: '', video_url: '', quiz: { q: 'ما الذي يحمي رائد الفضاء في الفضاء؟', choices: [ { t: 'البدلة الفضائية الخاصة', ok: true, pos: [0, 1.5, 0.15] }, { t: 'المظلة', ok: false, pos: [0, 1.2, -0.25] }, { t: 'الحذاء الرياضي', ok: false, pos: [0.15, 0.1, 0.1] } ] } },
       { id: 'itm_demo_2', kind: 'model', title: 'الروبوت المساعد', text_ar: 'الروبوتات تساعد روّاد الفضاء والعلماء في استكشاف الكواكب وجمع العينات من أماكن خطرة على الإنسان.', text_en: 'Robots help astronauts explore planets and collect samples from places too dangerous for humans.', file_url: SAMPLE_MODELS + 'RobotExpressive.glb', glb_url: SAMPLE_MODELS + 'RobotExpressive.glb', placement: 'floor', size: 'medium', audio_url: '', video_url: '' },
-      { id: 'itm_demo_3', kind: 'model', title: 'الحصان — وسيلة نقل قديمة', text_ar: 'قبل السيارات والطائرات كان الحصان من أهم وسائل النقل. قارن بين سرعته وسرعة الصاروخ!', text_en: 'Before cars and planes, the horse was a key means of transport. Compare its speed with a rocket!', file_url: SAMPLE_MODELS + 'Horse.glb', glb_url: SAMPLE_MODELS + 'Horse.glb', placement: 'floor', size: 'large', audio_url: '', video_url: 'https://www.youtube.com/watch?v=libKVRa01X8', quiz: { q: 'ما فائدة الحصان قديمًا؟', choices: [ { t: 'وسيلة نقل', ok: true, pos: [0, 1.0, 0] }, { t: 'مصدر للكهرباء', ok: false, pos: [0.55, 1.15, 0] }, { t: 'آلة حاسبة', ok: false, pos: [-0.6, 1.0, 0] } ] } },
+      { id: 'itm_demo_3', kind: 'model', title: 'الحصان — وسيلة نقل قديمة', text_ar: 'قبل السيارات والطائرات كان الحصان من أهم وسائل النقل. قارن بين سرعته وسرعة الصاروخ!', text_en: 'Before cars and planes, the horse was a key means of transport. Compare its speed with a rocket!', file_url: SAMPLE_MODELS + 'Horse.glb', glb_url: SAMPLE_MODELS + 'Horse.glb', placement: 'floor', size: 'large', audio_url: '', video_url: '', quiz: { q: 'ما فائدة الحصان قديمًا؟', choices: [ { t: 'وسيلة نقل', ok: true, pos: [0, 1.0, 0] }, { t: 'مصدر للكهرباء', ok: false, pos: [0.55, 1.15, 0] }, { t: 'آلة حاسبة', ok: false, pos: [-0.6, 1.0, 0] } ] } },
       { id: 'itm_demo_4', kind: 'image', title: 'لوحة المجموعة الشمسية', text_ar: 'هذه لوحة توضيحية: الشمس في الوسط، وتدور حولها ثمانية كواكب. جرّب عرضها على حيطة الفصل!', text_en: 'Illustrated panel: the Sun in the middle with eight planets orbiting around it.', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: 'المجموعة الشمسية ☀️', quiz: { q: 'كم عدد كواكب المجموعة الشمسية؟', choices: [ { t: '8 كواكب', ok: true }, { t: '5 كواكب', ok: false }, { t: '10 كواكب', ok: false } ] } },
     ],
   };
@@ -828,6 +828,8 @@ async function copyLibraryLesson(id) {
   if (!src) { alert('الدرس غير موجود في المكتبة'); return; }
   const sess = getSession();
   if (!sess) { showView('view-auth'); return; }
+  const countEl = $('libraryCount');
+  if (countEl) countEl.textContent = '⏳ جارٍ نسخ الدرس — تجهيز اللوحات والرفع...';
   const lesson = {
     id: uid('les'), teacher_id: isRemote() ? sess.id : (sess?.email || 'local'),
     title: src.title, subject: src.subject, grade: src.grade,
@@ -846,14 +848,14 @@ async function copyLibraryLesson(id) {
           it.file_url = it.glb_url;
         }
       }
-    } catch (e) { alert('تعذّر تجهيز لوحات الدرس: ' + e.message); return; }
+    } catch (e) { renderLibrary(); alert('تعذّر تجهيز لوحات الدرس: ' + e.message); return; }
     const { error } = await supabase.from('lessons').insert({
       id: lesson.id, teacher_id: sess.id, title: lesson.title,
       subject: lesson.subject, grade: lesson.grade, description: lesson.description,
     });
-    if (error) { alert('تعذّر نسخ الدرس: ' + friendlyAuthError(error)); return; }
+    if (error) { renderLibrary(); alert('تعذّر نسخ الدرس: ' + friendlyAuthError(error)); return; }
     const { error: e2 } = await supabase.from('items').insert(lesson.items.map((it, i) => itemRow(it, lesson.id, i)));
-    if (e2) { alert('تعذّر نسخ العناصر: ' + friendlyAuthError(e2)); return; }
+    if (e2) { renderLibrary(); alert('تعذّر نسخ العناصر: ' + friendlyAuthError(e2)); return; }
   }
   const lessons = getLessons(); lessons.unshift(lesson); saveLessons(lessons);
   renderDashboard(); openEditor(lesson.id);
@@ -903,7 +905,11 @@ window.__answerQuiz = (itemId, idx) => {
   renderStudentItem();
   const t = quizTotals();
   if (t.answered === t.total && t.total > 0) {
-    setTimeout(() => alert(`🎉 أنهيت كل الأسئلة! نتيجتك: ${t.score} من ${t.total} — اضغط «إنهاء الدرس» لحفظ تقريرك.`), 350);
+    const fb = $('finishLessonBtn');
+    if (fb) {
+      fb.textContent = `🏁 أنهيت كل الأسئلة (${t.score}/${t.total}) — اعرض نتيجتي`;
+      fb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   }
 };
 // حقول سؤال الفهم في محرر العناصر
@@ -1042,7 +1048,13 @@ window.__finishLesson = async () => {
   await saveActivity();
   const t = quizTotals();
   const mins = Math.max(1, Math.round(activitySeconds / 60));
-  alert(`🏁 انتهى الدرس!\n⏱️ قضيت حوالي ${mins} دقيقة\n❓ نتيجتك في الأسئلة: ${t.total ? `${t.score} من ${t.total}` : 'لا توجد أسئلة في هذا الدرس'}\nتم حفظ تقريرك عند المعلّم ✅`);
+  const box = $('finishResult');
+  box.classList.remove('hidden');
+  box.innerHTML = `<h3>🏁 انتهى الدرس!</h3>
+    <p>⏱️ قضيت حوالي <b>${mins} دقيقة</b> في هذا الدرس.</p>
+    <p>❓ نتيجتك في الأسئلة: <b>${t.total ? `${t.score} من ${t.total} (${Math.round((t.score / t.total) * 100)}%)` : 'لا توجد أسئلة في هذا الدرس'}</b></p>
+    <p class="hint">تم حفظ تقريرك عند المعلّم ✅ — يمكنك تصفّح الدرس مرة أخرى من الأعلى.</p>`;
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
 };
 function fmtMins(s) { const m = Math.floor((s || 0) / 60); return m < 1 ? 'أقل من دقيقة' : m + ' دقيقة'; }
 let reportAggCache = [];
@@ -1190,7 +1202,10 @@ async function init() {
   };
   $('printBtn').onclick = () => window.__openPrint(currentLessonId);
   $('backToDash').onclick = renderDashboard;
-  $('backFromPrint').onclick = renderDashboard;
+  $('backFromPrint').onclick = () => {
+    if (document.referrer && document.referrer.includes(location.host)) history.back();
+    else { history.pushState(null, '', location.pathname); showView('view-home'); }
+  };
   $('doPrintBtn').onclick = () => window.print();
   $('prevItemBtn').onclick = () => navStudent(-1);
   $('nextItemBtn').onclick = () => navStudent(1);

@@ -175,3 +175,7 @@ footer{background:var(--navy);color:var(--light-indigo);text-align:center;paddin
 .live-banner .btn{margin-inline-start:10px}
 .name-bar{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin:12px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .name-bar input{flex:1;min-width:180px}
+
+/* نتيجة إنهاء الدرس (لوحة داخل الصفحة بدل نافذة التنبيه) */
+.finish-result{background:#DCFCE7;border:2px solid var(--green);border-radius:14px;padding:18px;margin:14px 0}
+.finish-result h3{font-size:20px;color:var(--green)}
