@@ -54,7 +54,7 @@ function friendlyAuthError(e) {
   const m = String(e?.message || e || '');
   if (/Invalid login credentials/i.test(m)) return 'البريد أو كلمة السر غير صحيحة';
   if (/User already registered|already registered/i.test(m)) return 'هذا البريد مسجّل من قبل — جرّب تسجيل الدخول';
-  if (/Email not confirmed/i.test(m)) return 'لم يتم تأكيد البريد بعد — تحقق من بريدك واضغط رابط التأكيد';
+  if (/Email not confirmed/i.test(m)) return 'لم يتم تأكيد البريد بعد — جرّب إنشاء الحساب مرة أخرى';
   if (/Password should be at least/i.test(m)) return 'كلمة السر يجب أن تكون 6 أحرف على الأقل';
   if (/Failed to fetch|NetworkError|network/i.test(m)) return 'تعذّر الاتصال بالخادم — تحقق من الإنترنت وحاول مجددًا';
   return m || 'حدث خطأ';
@@ -267,9 +267,17 @@ function initAuth() {
           if (data.session?.user) {
             await applySupabaseUser(data.session.user);
           } else {
-            // تأكيد البريد مفعّل: الحساب أُنشئ، لكن الدخول بعد تأكيد البريد
-            showMsg($('authMsg'), 'تم إنشاء الحساب ✅ — تحقق من بريدك واضغط رابط التأكيد ثم سجّل الدخول.', true);
-            return;
+            // تأكيد البريد مُلغى من Supabase: الدخول يكون مباشرة بالحساب الجديد
+            const { data: s2, error: e2 } = await supabase.auth.signInWithPassword({ email, password: pass });
+            if (e2 || !s2?.user) {
+              authMode = 'login';
+              $('authTitle').textContent = 'تسجيل الدخول — المعلّم';
+              $('authSubmit').textContent = 'دخول';
+              $('authToggle').textContent = 'ليس لديك حساب؟ أنشئ حسابًا مجانيًا';
+              showMsg($('authMsg'), 'تم إنشاء الحساب ✅ — اضغط «دخول» الآن.', true);
+              return;
+            }
+            await applySupabaseUser(s2.user);
           }
         } else {
           const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
