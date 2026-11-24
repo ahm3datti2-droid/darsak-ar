@@ -674,13 +674,15 @@ async function openStudent(id) {
       // رجوع: تحديث مباشر (ينجح فقط لمالك الدرس — الطالب المجهول يمنعه RLS)
       try { await supabase.from('lessons').update({ views: (lesson.views || 0) + 1 }).eq('id', id); } catch {}
     }
-  } else {
-    const lessons = getLessons(); const local = lessons.find((l) => l.id === id);
-    if (local) { local.views = (local.views || 0) + 1; saveLessons(lessons); }
   }
+  // النسخة المحلية أيضًا (الدرس التجريبي غير موجود في Supabase،
+  // وبدون هذا السطر يظهر العدّاد 1 للطالب و0 في اللوحة)
+  const _lessons = getLessons(); const _local = _lessons.find((l) => l.id === id);
+  if (_local) { _local.views = (_local.views || 0) + 1; saveLessons(_lessons); lesson.views = _local.views; }
+  else { lesson.views = (lesson.views || 0) + 1; }
   studentLesson = lesson; studentIndex = 0;
   $('studentTitle').textContent = lesson.title;
-  $('studentMeta').textContent = `${lesson.subject || ''} • ${lesson.grade || ''} • 👁️ ${(lesson.views || 0) + 1} مشاهدة`;
+  $('studentMeta').textContent = `${lesson.subject || ''} • ${lesson.grade || ''} • 👁️ ${lesson.views || 0} مشاهدة`;
   showView('view-student');
   renderStudentItem();
   // هل يدعم الجهاز AR؟ (WebXR أو Scene Viewer)
