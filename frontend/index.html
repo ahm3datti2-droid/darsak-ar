@@ -24,10 +24,8 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 }}
 </script>
-<script>
-  // يضبطه النشر: رابط الـ Worker. اتركه فارغًا للوضع المحلي (localStorage).
-  window.DARSAK_API = window.DARSAK_API || "";
-</script>
+<script src="/supabase-config.js"></script>
+<!-- Supabase: قاعدة البيانات + المصادقة + التخزين (المفتاح anon عام وآمن — الحماية في RLS) -->
 </head>
 <body>
 
@@ -42,6 +40,7 @@
     <div class="header-actions">
       <button class="btn btn-light" id="navHomeBtn" type="button">🏠 الرئيسية</button>
       <button class="btn btn-light hidden" id="navDashBtn" type="button">لوحتي</button>
+      <button class="btn btn-light hidden" id="navAdminBtn" type="button">👥 المستخدمون</button>
       <button class="btn btn-light hidden" id="navLogoutBtn" type="button">خروج</button>
     </div>
   </div>
@@ -67,7 +66,7 @@
     <div class="card" style="text-align:center">
       <h2>كيف يعمل؟</h2>
       <p>1️⃣ سجّل كمعلّم &nbsp; 2️⃣ أنشئ درسًا وأضف عناصره &nbsp; 3️⃣ اطبع الـ QR والصقه في الفصل &nbsp; 4️⃣ الطالب يمسح ويعرض الدرس على الحيطة أو الأرض.</p>
-      <p class="hint">يعمل على أندرويد (Chrome + ARCore) وآيفون (Safari + Quick Look). مجاني بالكامل — Cloudflare Pages + Workers + D1 + R2.</p>
+      <p class="hint">يعمل على أندرويد (Chrome + ARCore) وآيفون (Safari + Quick Look). مجاني بالكامل — Supabase (قاعدة بيانات + مصادقة + تخزين) + Vercel.</p>
     </div>
   </section>
 
@@ -103,8 +102,26 @@
       <div class="row"><button class="btn btn-orange" id="createLessonBtn" type="button">➕ إنشاء درس جديد</button></div>
       <div id="dashMsg"></div>
     </div>
-    <h2>دروسي</h2>
+    <h2 id="lessonsHeading">دروسي</h2>
     <div id="lessonsList"></div>
+
+    <!-- ===== لوحة الأدمن (تظهر فقط لمن لديه is_admin) ===== -->
+    <div id="adminSection" class="hidden">
+      <h2>👥 لوحة الأدمن</h2>
+      <div class="stats-grid" id="adminStats"></div>
+      <div class="card">
+        <h3>المستخدمون</h3>
+        <div class="table-wrap" id="usersTable"></div>
+      </div>
+      <div class="card">
+        <h3>الزيارات حسب المصدر (منين جايين الزوار)</h3>
+        <div id="referrerStats"></div>
+      </div>
+      <div class="card">
+        <h3>الزيارات — آخر 7 أيام</h3>
+        <div id="dailyVisits"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ===== محرر الدرس ===== -->

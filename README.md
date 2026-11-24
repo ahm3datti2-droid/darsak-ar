@@ -4,7 +4,9 @@
 
 - **المعلّم:** يسجّل دخول، ينشئ درسًا، يرفع صورة (تتحوّل تلقائيًا إلى لوحة 3D بصيغة `.glb`) أو نموذج `.glb/.gltf`، يختار الحيطة/الأرض والحجم، ويضيف شرحًا وصوتًا وفيديو.
 - **الطالب:** يمسح QR أو يفتح الرابط، ويعرض الدرس بتقنية AR عبر `<model-viewer>` (WebXR / Scene Viewer / Quick Look).
-- **التقنيات المجانية فقط:** Cloudflare Pages + Workers + D1 + R2 (الباقات المجانية)، three.js + GLTFExporter، `model-viewer`، مكتبة `qrcode` — لا APIs مدفوعة ولا AR SDK مدفوع.
+- **التقنيات المجانية فقط:** Supabase (Postgres + Auth + Storage — الباقة المجانية) + Vercel للاستضافة، three.js + GLTFExporter، `model-viewer`، مكتبة `qrcode` — لا APIs مدفوعة ولا AR SDK مدفوع.
+
+> **تغيّرت البنية 2026-11-24:** الباك إند كان Cloudflare (Workers + D1 + R2) ثم انتقل إلى **Supabase** لأن تسجيل الدخول للوحة Cloudflare كان محظورًا من متصفح السحابة (Turnstile). مجلد `workers/api` ما زال موجودًا كمرجع قديم (**legacy / deprecated**) — لا يُستخدم ولا يُحذف.
 
 ## بنية المشروع
 
@@ -14,36 +16,44 @@ darsak-ar/
 ├── frontend/
 │   ├── index.html          # التطبيق كاملًا (SPA)
 │   ├── styles.css
-│   ├── app.js
+│   ├── app.js              # Supabase Auth + Postgres + Storage + لوحة الأدمن
+│   ├── supabase-config.js  # رابط المشروع + المفتاح العام anon
 │   ├── manifest.webmanifest
-│   ├── sw.js
+│   ├── sw.js               # Service Worker (ارفع رقم CACHE مع كل تغيير!)
 │   ├── lib/
 │   │   └── image-to-glb.js # تحويل الصورة إلى .glb
 │   └── public/
 │       ├── darsak-ar-icon.png
 │       └── favicon.png
+├── supabase/
+│   └── schema.sql          # جداول Postgres + RLS + سياسات Storage + دالة الأدمن
 ├── workers/
-│   └── api/
+│   └── api/                # ⚠️ قديم (deprecated): باك إند Cloudflare — لا يُستخدم
 │       ├── wrangler.toml
-│       └── src/index.js    # REST API + رفع الملفات
+│       └── src/index.js
 ├── db/
-│   └── schema.sql          # جداول D1
+│   └── schema.sql          # ⚠️ مخطط D1 القديم — لا يُستخدم
 └── docs/
     └── DEPLOY_ANDROID_AR.md
 ```
 
 ## النشر خطوة بخطوة — من موبايل أندرويد
 
-> كل الخطوات مجانية. تحتاج: حساب GitHub + حساب Cloudflare + متصفح Chrome على الموبايل.
+> كل الخطوات مجانية. تحتاج: حساب GitHub + حساب Supabase + متصفح Chrome على الموبايل.
 
 ### 1) أنشئ حساب GitHub مجاني
 1. افتح `github.com` في Chrome.
 2. اضغط **Sign up**، وأدخل بريدك وكلمة سر.
 3. أكّد بريدك من رسالة التفعيل.
 
-### 2) أنشئ حساب Cloudflare مجاني
-1. افتح `dash.cloudflare.com` واضغط **Sign up**.
-2. سجّل بنفس البريد. لا تحتاج بطاقة ائتمانية للباقة المجانية.
+### 2) أنشئ مشروع Supabase مجاني
+1. افتح `supabase.com` واضغط **Start your project** وسجّل (بـ GitHub مثلًا).
+2. **New project** — اسم المشروع `darsak-ar`، واختر كلمة سر قوية لقاعدة البيانات واحتفظ بها، والمنطقة الأقرب (Frankfurt).
+3. انتظر حتى يصبح المشروع **Healthy**، ثم من **Project Settings ← API** خذ:
+   - **Project URL** (مثل `https://xxxx.supabase.co`)
+   - **anon public key** (المفتاح العام — آمن في كود الواجهة)
+4. ضع القيمتين في ملف `frontend/supabase-config.js` (مكان `window.DARSAK_SUPABASE_URL` و`window.DARSAK_SUPABASE_ANON_KEY`).
+   > ⚠️ لا تضع أبدًا مفتاح `service_role` ولا كلمة سر قاعدة البيانات في كود الواجهة.
 
 ### 3) ارفع هذا المجلد إلى GitHub من الموبايل
 1. في GitHub اضغط **+** ثم **New repository**، وسمِّه `darsak-ar`، واختر **Public**، ثم **Create repository**.
@@ -52,44 +62,35 @@ darsak-ar/
 
 > بديل من الكمبيوتر: `git init && git add . && git commit -m "init" && git push`.
 
-### 4) وصّل Cloudflare Pages بالمستودع
-1. من لوحة Cloudflare اضغط **Workers & Pages** ثم **Create** ثم **Pages** ثم **Connect to Git**.
-2. اختر حساب GitHub وسمح بالوصول، ثم اختر مستودع `darsak-ar`.
-3. في **Framework preset** اختر **None** (أو Static).
-4. في **Build command** اتركه فارغًا، وفي **Build output directory** اكتب `frontend`.
-5. اضغط **Save and Deploy**. سيعطيك رابطًا مثل `https://darsak-ar.pages.dev`.
+### 4) وصّل Vercel بالمستودع (استضافة الواجهة)
+1. من لوحة Vercel اضغط **Add New ← Project** ثم **Import** مستودع `darsak-ar`.
+2. في **Root Directory** اكتب `frontend`، وفي **Framework Preset** اختر **Other**.
+3. **Build Command**: فارغ، و**Output Directory**: `.` (نقطة — مهم، وإلا يظهر 404).
+4. اضغط **Deploy**. سيعطيك رابطًا مثل `https://darsak-ar.vercel.app`.
 
-### 5) أنشئ قاعدة بيانات D1 ونفّذ `db/schema.sql`
-1. من لوحة Cloudflare: **Workers & Pages ← D1 SQL Database ← Create**.
-2. اسم قاعدة البيانات: `darsak-ar` ثم **Create**.
-3. افتح القاعدة، تبويب **Console**، والصق محتوى ملف `db/schema.sql` كاملًا، ثم اضغط **Execute**.
+### 5) أنشئ جداول قاعدة البيانات (Supabase)
+1. من لوحة Supabase: **SQL Editor ← New query**.
+2. الصق محتوى ملف `supabase/schema.sql` كاملًا ثم **Run**.
+   > ⚠️ الترتيب داخل الملف مهم: الجداول والفهارس أولًا، ثم دالة `is_admin()`، ثم RLS والسياسات — تعريف الدالة قبل جدول `teachers` يفشل بالخطأ `42P01`.
+3. الملف ينشئ الجداول الأربعة (`teachers`, `lessons`, `items`, `site_visits`) + كل سياسات RLS + دالة `increment_lesson_views` (عدّاد المشاهدات) + سياسات Storage.
 
-### 6) أنشئ مخزن ملفات R2
-1. من اللوحة: **R2 Object Storage ← Create bucket**.
-2. اسم الـ Bucket: `darsak-ar-files` ثم **Create bucket**.
-3. من إعدادات الـ Bucket فعّل **Public access** (أو اربط نطاقًا عامًا) حتى تظهر الصور والنماذج للطلاب — بدون ذلك لن تفتح الملفات برابط عام.
+### 6) أنشئ مخزن الملفات (Storage)
+1. من اللوحة: **Storage ← New bucket**، الاسم `darsak-files`، واختر **Public bucket**.
+2. سياسات القراءة العامة والرفع للمعلّمين موجودة في `supabase/schema.sql` (تُنفَّذ مع الملف في الخطوة 5).
 
-### 7) انشر الـ Worker (API)
-1. من الكمبيوتر (أو من تطبيق Termux على الموبايل): ثبّت Wrangler: `npm install -g wrangler` ثم `wrangler login`.
-2. من مجلد `workers/api` نفّذ:
-   ```bash
-   wrangler d1 create darsak-ar        # خذ الـ database_id والصقه في wrangler.toml
-   wrangler r2 bucket create darsak-ar-files
-   wrangler deploy
+### 7) امنح نفسك صلاحية الأدمن
+1. افتح الموقع وسجّل حساب معلّم ببريدك (من صفحة الدخول ← «أنشئ حسابًا مجانيًا»).
+   - إن كان تأكيد البريد مفعّلًا، اضغط رابط التأكيد من بريدك ثم سجّل الدخول.
+2. من لوحة Supabase: **SQL Editor** ونفّذ:
+   ```sql
+   update public.teachers set is_admin = true where email = 'ahm3d.atti2@gmail.com';
    ```
-3. ستحصل على رابط مثل `https://darsak-ar-api.<subdomain>.workers.dev`.
+   (بدّل البريد ببريدك إن كان مختلفًا.)
+3. سجّل خروجًا ودخولًا من الموقع — ستظهر لوحة الأدمن (زر «👥 المستخدمون» + قسم الإحصائيات والمستخدمين والزيارات)، وسترى كل الدروس مع تحرير/حذف أي درس أو عنصر.
 
-> بدون كمبيوتر: يمكن إنشاء Worker من لوحة Cloudflare (**Workers & Pages ← Create ← Worker**) ولصق محتوى `workers/api/src/index.js`، ثم ربط D1 وR2 من تبويب **Settings ← Bindings**.
-
-### 8) اضبط متغيرات البيئة
-1. في مشروع Pages: **Settings ← Environment variables**، أضف:
-   - `DARSAK_API` = رابط الـ Worker (مثال `https://darsak-ar-api.xxx.workers.dev`)
-2. في مشروع Worker: **Settings ← Variables**، أضف:
-   - `R2_PUBLIC_URL` = الرابط العام لـ R2 (مثال `https://pub-xxxx.r2.dev`)
-   - `JWT_SECRET` = أي نص عشوائي طويل (اخترعه أنت).
-3. أعد النشر (**Deployments ← Retry deployment**).
-
-> إذا لم تضبط `DARSAK_API` يعمل التطبيق في **الوضع المحلي**: البيانات تُحفظ في `localStorage` على جهاز المعلّم، والدرس التجريبي «المجموعة الشمسية» يظهر فورًا. حساب تجريبي: `demo@darsak.ar` / `123456`.
+### 8) الوضع دون اتصال (احتياطي)
+- إن تعذّر تحميل عميل Supabase من الـ CDN يعمل التطبيق في **الوضع المحلي**: البيانات تُحفظ في `localStorage` على جهاز المعلّم، والدرس التجريبي «المجموعة الشمسية» يظهر فورًا. حساب تجريبي: `demo@darsak.ar` / `123456`.
+- ملاحظة: الدروس المُنشأة في الوضع المحلي لا تنتقل تلقائيًا إلى Supabase — أنشئها مجددًا بعد الاتصال.
 
 ### 9) جرّب QR والـ AR على الموبايل
 1. سجّل دخول كمعلّم، أنشئ درسًا، أضف عنصرًا (صورة أو نموذج).
@@ -97,14 +98,20 @@ darsak-ar/
 3. من موبايل آخر (أو نفس الموبايل بكاميرا تطبيق آخر) امسح QR — يجب أن يفتح الدرس.
 4. اضغط زر **«اعرض على الحيطة / على الأرض»** البرتقالي، وجّه الكاميرا على حيطة أو أرض فاضية وحرّك الموبايل ببطء.
 
-### 10) حدود الباقة المجانية
+### 10) حدود الباقة المجانية (Supabase Free)
 | الخدمة | الحد المجاني | ملاحظة |
 |---|---|---|
-| Pages | طلبات غير محدودة تقريبًا | استضافة ثابتة مجانية |
-| Workers | 100,000 طلب/يوم | كافٍ لآلاف الطلاب |
-| D1 | 5 GB تخزين، 5M قراءة/يوم | دروس ونصوص فقط |
-| R2 | 10 GB تخزين، 10M قراءة/شهر | ملفات الطلاب |
+| Postgres | 500 MB تخزين | دروس ونصوص فقط |
+| Auth | 50,000 مستخدم نشط شهريًا | |
+| Storage | 1 GB تخزين، 2 GB نقل بيانات/شهر | ملفات الطلاب (.glb / mp3) |
 | **أقصى حجم ملف** | **15 MB** | صورة / نموذج / صوت — أكبر من ذلك يرفضه التطبيق برسالة عربية |
+
+## لوحة الأدمن
+تظهر فقط للحساب الذي لديه `is_admin = true` في جدول `teachers` (انظر الخطوة 7):
+- **بطاقات إحصائيات:** إجمالي المستخدمين، إجمالي الدروس، إجمالي مشاهدات الدروس، إجمالي زيارات الموقع، زيارات اليوم.
+- **جدول المستخدمين:** الاسم، البريد، عدد دروسه، تاريخ الانضمام (👑 بجانب الأدمن).
+- **الزيارات:** حسب المصدر (النطاق الذي جاء منه الزائر — جوجل/فيسبوك/واتساب/مباشر…) وحسب اليوم لآخر 7 أيام — من جدول `site_visits` (صف واحد لكل زائر/مسار/يوم، يُسجَّل تلقائيًا عند فتح الصفحة الرئيسية أو أي درس).
+- **تحكم كامل:** الأدمن يرى كل الدروس (وليس دروسه فقط) مع تحرير وحذف أي درس وأي عنصر داخل أي درس.
 
 ## التطوير محليًا
 ```bash

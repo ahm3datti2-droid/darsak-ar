@@ -1,18 +1,27 @@
 /**
  * درسك AR — منطق التطبيق كاملًا (SPA)
- * - تسجيل المعلّم: محلي (SHA-256 + localStorage) أو عبر Worker API عند ضبط window.DARSAK_API
- * - الدروس: localStorage مع مزامنة اختيارية مع الـ Worker
+ * - الباك إند: Supabase (Auth + Postgres + Storage) — يُحمّل عميل JS عبر ESM CDN
+ *   مع رجوع تلقائي للوضع المحلي (localStorage) إن تعذّر تحميل الـ CDN.
+ * - تسجيل المعلّم: Supabase Auth (email+password) + صف في جدول teachers.
+ *   الحساب التجريبي demo@darsak.ar / 123456 يعمل محليًا دون اتصال كما كان.
+ * - الدروس/العناصر: جداول lessons/items، والملفات في Storage bucket darsak-files.
  * - الصورة → .glb في المتصفح (three.js + GLTFExporter) عبر lib/image-to-glb.js
- * - QR: مكتبة qrcode + شعار في المنتصف — تحميل PNG / نسخ رابط / واتساب
- * - الطالب: <model-viewer> مع ar-placement من إعداد المعلّم + عدّاد مشاهدات + Lazy-load
+ * - QR: مكتبة qrcode-generator مضمّنة محليًا + شعار في المنتصف
+ * - الطالب: <model-viewer> مع ar-placement من إعداد المعلّم + عدّاد مشاهدات
+ *   (RPC increment_lesson_views) + تسجيل زيارة في site_visits
+ * - الأدمن (teachers.is_admin): إحصائيات + جدول مستخدمين + زيارات حسب المصدر
+ *   واليوم + تحرير/حذف أي درس أو عنصر.
  */
 import { imageFileToGlb } from './lib/image-to-glb.js';
 
-const API_BASE = (window.DARSAK_API || '').replace(/\/$/, '');
+const SUPA_URL = window.DARSAK_SUPABASE_URL || '';
+const SUPA_KEY = window.DARSAK_SUPABASE_ANON_KEY || '';
+const STORAGE_BUCKET = 'darsak-files';
 const MAX_BYTES = 15 * 1024 * 1024; // 15MB
 const LS_LESSONS = 'darsak.lessons.v1';
 const LS_TEACHERS = 'darsak.teachers.v1';
 const LS_SESSION = 'darsak.session.v1';
+const LS_VISITOR = 'darsak.visitor.v1';
 const SIZE_M = { small: 0.5, medium: 1, large: 1.8 };
 const SIZE_LABEL = { small: 'صغير (0.5م)', medium: 'متوسط (1م)', large: 'كبير (1.8م)' };
 const SAMPLE_MODELS = 'https://modelviewer.dev/shared-assets/models/';
@@ -41,20 +50,54 @@ function youtubeId(url) {
   const m = String(url).match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{6,})/);
   return m ? m[1] : '';
 }
+function friendlyAuthError(e) {
+  const m = String(e?.message || e || '');
+  if (/Invalid login credentials/i.test(m)) return 'البريد أو كلمة السر غير صحيحة';
+  if (/User already registered|already registered/i.test(m)) return 'هذا البريد مسجّل من قبل — جرّب تسجيل الدخول';
+  if (/Email not confirmed/i.test(m)) return 'لم يتم تأكيد البريد بعد — تحقق من بريدك واضغط رابط التأكيد';
+  if (/Password should be at least/i.test(m)) return 'كلمة السر يجب أن تكون 6 أحرف على الأقل';
+  if (/Failed to fetch|NetworkError|network/i.test(m)) return 'تعذّر الاتصال بالخادم — تحقق من الإنترنت وحاول مجددًا';
+  return m || 'حدث خطأ';
+}
 
-/* ================= التخزين المحلي ================= */
+/* ================= التخزين المحلي (الوضع دون اتصال) ================= */
 function loadLocal(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
 function saveLocal(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
-function getLessons() { return loadLocal(LS_LESSONS, null) ?? seedDemoIfNeeded(); }
-function saveLessons(list) { saveLocal(LS_LESSONS, list); }
-function getSession() { return loadLocal(LS_SESSION, null); }
-function setSession(s) { s ? saveLocal(LS_SESSION, s) : localStorage.removeItem(LS_SESSION); }
+
+/* ================= الجلسة ================= */
+// session = { id?, email, name, is_admin?, mode: 'supabase' | 'local' }
+let session = null;
+let supabase = null; // عميل Supabase — null إن تعذّر تحميل الـ CDN
+let lessonsCache = null; // دروس محمّلة (من Supabase أو localStorage)
+let teacherEmails = {}; // id → email (للأدمن فقط)
+
+function getSession() { return session; }
+function setSession(s) {
+  session = s || null;
+  if (s && s.mode === 'local') saveLocal(LS_SESSION, s);
+  else localStorage.removeItem(LS_SESSION);
+}
+const isRemote = () => !!supabase && session?.mode === 'supabase';
+const isAdmin = () => !!session?.is_admin;
+
+/* ================= Supabase: تحميل العميل ================= */
+async function loadSupabaseClient() {
+  if (!SUPA_URL || !SUPA_KEY) return;
+  try {
+    const mod = await Promise.race([
+      import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('supabase cdn timeout')), 10000)),
+    ]);
+    supabase = mod.createClient(SUPA_URL, SUPA_KEY);
+  } catch (e) {
+    console.warn('Supabase CDN غير متاح — الوضع المحلي (localStorage)', e);
+    supabase = null;
+  }
+}
 
 /* ================= الدرس التجريبي: المجموعة الشمسية ================= */
-function seedDemoIfNeeded() {
-  const existing = loadLocal(LS_LESSONS, null);
-  if (existing) return existing;
-  const lesson = {
+function buildDemoLesson() {
+  return {
     id: 'les_demo_solar', teacher_id: 'demo', title: 'المجموعة الشمسية',
     subject: 'علوم', grade: 'الصف الرابع', description: 'درس تجريبي: تعرّف على كواكب المجموعة الشمسية وروّاد الفضاء في الواقع المعزّز.',
     views: 0, created_at: new Date().toISOString(),
@@ -65,29 +108,96 @@ function seedDemoIfNeeded() {
       { id: 'itm_demo_4', kind: 'image', title: 'لوحة المجموعة الشمسية', text_ar: 'هذه لوحة توضيحية: الشمس في الوسط، وتدور حولها ثمانية كواكب. جرّب عرضها على حيطة الفصل!', text_en: 'Illustrated panel: the Sun in the middle with eight planets orbiting around it.', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: 'المجموعة الشمسية ☀️' },
     ],
   };
-  saveLocal(LS_LESSONS, [lesson]);
-  return [lesson];
+}
+function seedDemoIfNeeded() {
+  const existing = loadLocal(LS_LESSONS, null);
+  if (existing) return existing;
+  const list = [buildDemoLesson()];
+  saveLocal(LS_LESSONS, list);
+  return list;
 }
 
-/* ================= API (اختياري — عند ضبط DARSAK_API) ================= */
-async function api(path, { method = 'GET', body, token } = {}) {
-  if (!API_BASE) return null;
-  const res = await fetch(API_BASE + path, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'خطأ في الخادم');
-  return data;
+/* ================= طبقة البيانات: Supabase أو محلي ================= */
+function getLessons() {
+  if (lessonsCache) return lessonsCache;
+  if (isRemote()) return [];
+  return loadLocal(LS_LESSONS, null) ?? seedDemoIfNeeded();
 }
-async function apiUpload(file, type, token) {
-  const res = await fetch(`${API_BASE}/api/upload?type=${type}&filename=${encodeURIComponent(file.name)}`, {
-    method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream', Authorization: 'Bearer ' + token }, body: file,
+function saveLessons(list) {
+  lessonsCache = list;
+  if (!isRemote()) saveLocal(LS_LESSONS, list); // في وضع Supabase الحفظ يتم عبر الـ API مباشرة
+}
+async function loadLessons() {
+  if (isRemote()) {
+    let q = supabase.from('lessons').select('*').order('created_at', { ascending: false });
+    if (!isAdmin()) q = q.eq('teacher_id', session.id);
+    const { data, error } = await q;
+    if (error) throw new Error('تعذّر تحميل الدروس: ' + friendlyAuthError(error));
+    const ids = (data || []).map((l) => l.id);
+    let items = [];
+    if (ids.length) {
+      const { data: it, error: e2 } = await supabase.from('items').select('*').in('lesson_id', ids).order('sort_order', { ascending: true });
+      if (e2) throw new Error('تعذّر تحميل العناصر: ' + friendlyAuthError(e2));
+      items = it || [];
+    }
+    lessonsCache = (data || []).map((l) => ({ ...l, items: items.filter((i) => i.lesson_id === l.id) }));
+    return lessonsCache;
+  }
+  lessonsCache = loadLocal(LS_LESSONS, null) ?? seedDemoIfNeeded();
+  return lessonsCache;
+}
+async function fetchPublicLesson(id) {
+  if (!supabase) return null;
+  const { data: l, error } = await supabase.from('lessons').select('*').eq('id', id).maybeSingle();
+  if (error || !l) return null;
+  const { data: items } = await supabase.from('items').select('*').eq('lesson_id', id).order('sort_order', { ascending: true });
+  return { ...l, items: items || [] };
+}
+function findLocalLesson(id) {
+  const list = loadLocal(LS_LESSONS, null) || [];
+  return list.find((l) => l.id === id) || null;
+}
+async function uploadToStorage(fileOrBlob, filename, lessonId) {
+  const safe = String(filename).replace(/[^\w.\-]+/g, '_');
+  const path = `${session.id}/${lessonId}/${Date.now()}_${safe}`;
+  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, fileOrBlob, {
+    upsert: true, contentType: fileOrBlob.type || 'application/octet-stream',
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'فشل رفع الملف');
-  return data.url;
+  if (error) throw new Error('فشل رفع الملف: ' + friendlyAuthError(error));
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+// صف العنصر كما يُحفظ في جدول items (بدون حقول محلية مثل textPanel)
+function itemRow(it, lessonId, sortOrder) {
+  return {
+    id: it.id, lesson_id: lessonId, sort_order: sortOrder,
+    kind: it.kind, title: it.title, text_ar: it.text_ar || '', text_en: it.text_en || '',
+    file_url: it.file_url || '', glb_url: it.glb_url || '',
+    placement: it.placement, size: it.size,
+    audio_url: it.audio_url || '', video_url: it.video_url || '',
+  };
+}
+
+/* ================= تتبّع الزيارات ================= */
+function getVisitorId() {
+  let vid = null;
+  try { vid = localStorage.getItem(LS_VISITOR); } catch {}
+  if (!vid) {
+    vid = uid('vis');
+    try { localStorage.setItem(LS_VISITOR, vid); } catch {}
+  }
+  return vid;
+}
+async function recordVisit(path) {
+  if (!supabase) return; // لا تتبّع في الوضع المحلي
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const device = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
+    await supabase.from('site_visits').insert({
+      visitor_id: getVisitorId(), path, referrer: document.referrer || '', device, day,
+    });
+    // خطأ التكرار (نفس الزائر/المسار/اليوم) متوقَّع ويُتجاهل — الصف موجود أصلًا
+  } catch {}
 }
 
 /* ================= التنقّل بين الصفحات ================= */
@@ -98,11 +208,39 @@ function showView(id) {
   const logged = !!getSession();
   $('navDashBtn').classList.toggle('hidden', !logged);
   $('navLogoutBtn').classList.toggle('hidden', !logged);
+  $('navAdminBtn').classList.toggle('hidden', !(logged && isAdmin()));
 }
 function publicLink(lessonId) { return location.origin + location.pathname + '?lesson=' + lessonId; }
 
 /* ================= المصادقة ================= */
 let authMode = 'login'; // أو signup
+
+async function fetchProfile(userId) {
+  const { data } = await supabase.from('teachers').select('id,email,name,is_admin').eq('id', userId).maybeSingle();
+  return data || null;
+}
+async function applySupabaseUser(user) {
+  let profile = await fetchProfile(user.id);
+  if (!profile) {
+    // سجّل قبل إنشاء صف teachers (مثلًا أكّد بريده بعد التسجيل) — أنشئ الصف الآن
+    const { error } = await supabase.from('teachers').insert({ id: user.id, email: user.email, name: user.email.split('@')[0] });
+    if (!error) profile = await fetchProfile(user.id);
+  }
+  setSession({
+    id: user.id, email: user.email,
+    name: profile?.name || user.email.split('@')[0],
+    is_admin: !!profile?.is_admin, mode: 'supabase',
+  });
+  lessonsCache = null;
+}
+async function tryLocalLogin(email, pass) {
+  const teachers = loadLocal(LS_TEACHERS, [{ email: 'demo@darsak.ar', password_hash: await sha256('123456'), name: 'معلّم تجريبي' }]);
+  const t = teachers.find((x) => x.email === email);
+  if (!t || t.password_hash !== await sha256(pass)) return false;
+  setSession({ email, name: t.name, is_admin: false, mode: 'local' });
+  lessonsCache = null;
+  return true;
+}
 function initAuth() {
   $('authToggle').onclick = (e) => {
     e.preventDefault();
@@ -118,10 +256,31 @@ function initAuth() {
     if (!email.includes('@') || pass.length < 6) return showMsg($('authMsg'), 'أدخل بريدًا صحيحًا وكلمة سر 6 أحرف على الأقل');
     $('authSubmit').disabled = true;
     try {
-      if (API_BASE) {
-        const data = await api(authMode === 'login' ? '/api/auth/login' : '/api/auth/signup',
-          { method: 'POST', body: { email, password: pass, name } });
-        setSession({ token: data.token, email: data.teacher.email, name: data.teacher.name });
+      if (supabase) {
+        if (authMode === 'signup') {
+          const { data, error } = await supabase.auth.signUp({ email, password: pass });
+          if (error) throw new Error(friendlyAuthError(error));
+          if (data.user) {
+            // صف المعلّم في جدول teachers (يتجاهل الفشل إن كان موجودًا)
+            await supabase.from('teachers').insert({ id: data.user.id, email, name: name || email.split('@')[0] });
+          }
+          if (data.session?.user) {
+            await applySupabaseUser(data.session.user);
+          } else {
+            // تأكيد البريد مفعّل: الحساب أُنشئ، لكن الدخول بعد تأكيد البريد
+            showMsg($('authMsg'), 'تم إنشاء الحساب ✅ — تحقق من بريدك واضغط رابط التأكيد ثم سجّل الدخول.', true);
+            return;
+          }
+        } else {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
+          if (error) {
+            // رجوع للحساب التجريبي المحلي (يعمل حتى دون اتصال)
+            const ok = await tryLocalLogin(email, pass);
+            if (!ok) throw new Error(friendlyAuthError(error));
+          } else if (data.user) {
+            await applySupabaseUser(data.user);
+          }
+        }
       } else {
         // الوضع المحلي: حساب تجريبي + حسابات محفوظة في localStorage
         const teachers = loadLocal(LS_TEACHERS, [{ email: 'demo@darsak.ar', password_hash: await sha256('123456'), name: 'معلّم تجريبي' }]);
@@ -129,11 +288,10 @@ function initAuth() {
           if (teachers.some((t) => t.email === email)) throw new Error('هذا البريد مسجّل من قبل — جرّب تسجيل الدخول');
           teachers.push({ email, password_hash: await sha256(pass), name: name || email.split('@')[0] });
           saveLocal(LS_TEACHERS, teachers);
-          setSession({ email, name: name || email.split('@')[0] });
+          setSession({ email, name: name || email.split('@')[0], is_admin: false, mode: 'local' });
         } else {
-          const t = teachers.find((x) => x.email === email);
-          if (!t || t.password_hash !== await sha256(pass)) throw new Error('البريد أو كلمة السر غير صحيحة');
-          setSession({ email, name: t.name });
+          const ok = await tryLocalLogin(email, pass);
+          if (!ok) throw new Error('البريد أو كلمة السر غير صحيحة');
         }
       }
       showMsg($('authMsg'), '', true);
@@ -144,12 +302,22 @@ function initAuth() {
 }
 
 /* ================= لوحة المعلّم ================= */
-function renderDashboard() {
-  const session = getSession();
-  if (!session) { showView('view-auth'); return; }
-  $('teacherName').textContent = session.name || session.email;
+async function renderDashboard() {
+  const sess = getSession();
+  if (!sess) { showView('view-auth'); return; }
+  $('teacherName').textContent = sess.name || sess.email;
+  $('lessonsHeading').textContent = isAdmin() ? 'كل الدروس — عرض الأدمن' : 'دروسي';
   showView('view-dashboard');
-  const lessons = getLessons().filter((l) => !API_BASE || l.teacher_id === session.email || l.teacher_id === 'demo' || true);
+  let lessons;
+  try { lessons = await loadLessons(); }
+  catch (e) { $('lessonsList').innerHTML = `<div class="card"><div class="error">${esc(e.message)}</div></div>`; return; }
+  if (isAdmin()) {
+    try {
+      const { data } = await supabase.from('teachers').select('id,email').order('created_at', { ascending: true });
+      teacherEmails = {};
+      (data || []).forEach((t) => { teacherEmails[t.id] = t.email; });
+    } catch {}
+  }
   $('lessonsList').innerHTML = lessons.length ? lessons.map((l) => `
     <div class="card lesson-card">
       <div class="thumb">📚</div>
@@ -159,6 +327,7 @@ function renderDashboard() {
         <span class="badge">${esc(l.grade || '')}</span>
         <span class="badge orange">👁️ ${l.views || 0} مشاهدة</span>
         <span class="badge">${(l.items || []).length} عنصر</span>
+        ${isAdmin() && teacherEmails[l.teacher_id] ? `<span class="badge">👤 ${esc(teacherEmails[l.teacher_id])}</span>` : ''}
         <p class="hint">${esc(l.description || '')}</p>
         <div class="row">
           <button class="btn btn-primary btn-sm" onclick="window.__editLesson('${l.id}')">✏️ تحرير وعناصر</button>
@@ -168,17 +337,86 @@ function renderDashboard() {
         </div>
       </div>
     </div>`).join('') : '<div class="card">لا توجد دروس بعد — أنشئ أول درس من الأعلى 👆</div>';
+  if (isAdmin()) renderAdmin();
+  else $('adminSection').classList.add('hidden');
 }
 window.__editLesson = (id) => openEditor(id);
 window.__openStudent = (id) => { location.hash = ''; history.pushState(null, '', '?lesson=' + id); openStudent(id); };
 window.__openPrint = (id) => { history.pushState(null, '', '?print=' + id); openPrint(id); };
 window.__deleteLesson = async (id) => {
   if (!confirm('حذف هذا الدرس نهائيًا؟')) return;
-  const session = getSession();
-  if (API_BASE && session?.token) { try { await api('/api/lessons/' + id, { method: 'DELETE', token: session.token }); } catch (e) { alert(e.message); return; } }
+  if (isRemote()) {
+    const { error } = await supabase.from('lessons').delete().eq('id', id);
+    if (error) { alert('تعذّر حذف الدرس: ' + friendlyAuthError(error)); return; }
+  }
   saveLessons(getLessons().filter((l) => l.id !== id));
   renderDashboard();
 };
+
+/* ================= لوحة الأدمن ================= */
+async function renderAdmin() {
+  $('adminSection').classList.remove('hidden');
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  try {
+    const [usersRes, lessonsRes, visitsRes, todayRes] = await Promise.all([
+      supabase.from('teachers').select('id,email,name,created_at').order('created_at', { ascending: false }),
+      supabase.from('lessons').select('id,teacher_id,views'),
+      supabase.from('site_visits').select('id', { count: 'exact', head: true }),
+      supabase.from('site_visits').select('id', { count: 'exact', head: true }).eq('day', today),
+    ]);
+    const users = usersRes.data || [];
+    const lessons = lessonsRes.data || [];
+    const totalViews = lessons.reduce((s, l) => s + (l.views || 0), 0);
+    const lessonsByTeacher = {};
+    lessons.forEach((l) => { lessonsByTeacher[l.teacher_id] = (lessonsByTeacher[l.teacher_id] || 0) + 1; });
+    $('adminStats').innerHTML = [
+      ['👥', users.length, 'مستخدم'],
+      ['📚', lessons.length, 'درس'],
+      ['👁️', totalViews, 'مشاهدة دروس'],
+      ['🌐', visitsRes.count ?? 0, 'زيارة للموقع'],
+      ['📅', todayRes.count ?? 0, 'زيارة اليوم'],
+    ].map(([ico, num, lbl]) => `<div class="stat-card"><div class="num">${ico} ${num}</div><div class="lbl">${lbl}</div></div>`).join('');
+    $('usersTable').innerHTML = users.length ? `
+      <table class="admin-table">
+        <thead><tr><th>الاسم</th><th>البريد</th><th>الدروس</th><th>تاريخ الانضمام</th></tr></thead>
+        <tbody>${users.map((u) => `<tr>
+          <td>${esc(u.name || '—')}${u.is_admin ? ' 👑' : ''}</td>
+          <td dir="ltr" style="text-align:right">${esc(u.email)}</td>
+          <td>${lessonsByTeacher[u.id] || 0}</td>
+          <td>${esc((u.created_at || '').slice(0, 10))}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : '<p class="hint">لا يوجد مستخدمون بعد.</p>';
+  } catch (e) {
+    $('adminStats').innerHTML = `<div class="error">${esc(e.message || 'تعذّر تحميل إحصائيات الأدمن')}</div>`;
+  }
+  // الزيارات حسب المصدر + حسب اليوم (آخر 7 أيام)
+  try {
+    const { data } = await supabase.from('site_visits').select('referrer,day').gte('day', weekAgo).limit(2000);
+    const rows = data || [];
+    const byRef = {};
+    rows.forEach((r) => {
+      let host = 'مباشر / بدون مصدر';
+      try { if (r.referrer) host = new URL(r.referrer).hostname.replace(/^www\./, ''); } catch { host = r.referrer || host; }
+      byRef[host] = (byRef[host] || 0) + 1;
+    });
+    const topRef = Object.entries(byRef).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    $('referrerStats').innerHTML = topRef.length ? topRef.map(([h, c]) =>
+      `<div class="ref-row"><span>${esc(h)}</span><b>${c}</b></div>`).join('') : '<p class="hint">لا توجد زيارات مسجّلة بعد.</p>';
+    const byDay = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+      byDay[d] = 0;
+    }
+    rows.forEach((r) => { if (r.day in byDay) byDay[r.day]++; });
+    const max = Math.max(1, ...Object.values(byDay));
+    $('dailyVisits').innerHTML = Object.entries(byDay).map(([d, c]) =>
+      `<div class="day-row"><span>${esc(d)}</span><div class="day-bar"><div style="width:${Math.round((c / max) * 100)}%"></div></div><b>${c}</b></div>`).join('');
+  } catch {
+    $('referrerStats').innerHTML = '<p class="hint">تعذّر تحميل بيانات الزيارات.</p>';
+    $('dailyVisits').innerHTML = '';
+  }
+}
 
 /* ================= محرر الدرس ================= */
 let currentLessonId = null;
@@ -195,8 +433,9 @@ function segInit(containerId, attr, cb) {
   });
 }
 
-function openEditor(id) {
+async function openEditor(id) {
   currentLessonId = id;
+  try { await loadLessons(); } catch {}
   const lesson = getLessons().find((l) => l.id === id);
   if (!lesson) return;
   $('editorTitle').textContent = '✏️ ' + lesson.title;
@@ -228,15 +467,26 @@ function renderItems() {
       </div>
     </div>`).join('') : '<div class="card">لا توجد عناصر بعد — أضف أول عنصر من النموذج أعلاه 👆</div>';
 }
-window.__moveItem = (id, dir) => {
+window.__moveItem = async (id, dir) => {
   const lessons = getLessons(); const lesson = lessons.find((l) => l.id === currentLessonId);
+  if (!lesson) return;
   const i = lesson.items.findIndex((x) => x.id === id); const j = i + dir;
   if (i < 0 || j < 0 || j >= lesson.items.length) return;
   [lesson.items[i], lesson.items[j]] = [lesson.items[j], lesson.items[i]];
+  if (isRemote()) {
+    const a = lesson.items[i], b = lesson.items[j];
+    const { error } = await supabase.from('items').update({ sort_order: i }).eq('id', a.id);
+    const { error: e2 } = error ? {} : await supabase.from('items').update({ sort_order: j }).eq('id', b.id);
+    if (error || e2) { alert('تعذّر إعادة الترتيب: ' + friendlyAuthError(error || e2)); return; }
+  }
   saveLessons(lessons); renderItems();
 };
-window.__deleteItem = (id) => {
+window.__deleteItem = async (id) => {
   if (!confirm('حذف هذا العنصر؟')) return;
+  if (isRemote()) {
+    const { error } = await supabase.from('items').delete().eq('id', id);
+    if (error) { alert('تعذّر حذف العنصر: ' + friendlyAuthError(error)); return; }
+  }
   const lessons = getLessons(); const lesson = lessons.find((l) => l.id === currentLessonId);
   lesson.items = lesson.items.filter((x) => x.id !== id);
   saveLessons(lessons); renderItems();
@@ -264,7 +514,6 @@ async function addItem() {
   const audioFile = $('itemAudio').files[0];
   if (!editingItemId && !file) return showMsg($('editorMsg'), 'اختر ملف الصورة أو النموذج أولًا');
   if (!checkFileSize(file) || !checkFileSize(audioFile)) return;
-  const session = getSession();
   const btn = $('addItemBtn'); btn.disabled = true;
   const prog = $('uploadProgress'); prog.classList.remove('hidden');
   const bar = prog.querySelector('div');
@@ -274,43 +523,59 @@ async function addItem() {
       bar.style.width = '30%';
       if (currentKind === 'image') {
         // الصورة → ضغط + تحويل إلى .glb في المتصفح
-        const { blob, url } = await imageFileToGlb(file, { maxWidth: 1200, quality: 0.82 });
-        glbUrl = url; fileUrl = url; // Blob URL محلي — يُرفع للخادم عند توفر API
-        if (API_BASE && session?.token) {
-          const up = await apiUpload(new File([blob], title.replace(/\s+/g, '_') + '.glb', { type: 'model/gltf-binary' }), 'model', session.token);
-          glbUrl = up; fileUrl = up;
+        const { blob } = await imageFileToGlb(file, { maxWidth: 1200, quality: 0.82 });
+        if (isRemote()) {
+          glbUrl = await uploadToStorage(new File([blob], title.replace(/\s+/g, '_') + '.glb', { type: 'model/gltf-binary' }), title.replace(/\s+/g, '_') + '.glb', currentLessonId);
+          fileUrl = glbUrl;
+        } else {
+          glbUrl = URL.createObjectURL(blob); fileUrl = glbUrl;
         }
         $('fileInfo').textContent = '✅ تم تحويل الصورة إلى لوحة 3D (.glb) بنسبة أبعادها الأصلية.';
       } else {
         if (!/\.(glb|gltf)$/i.test(file.name)) throw new Error('ملف النموذج يجب أن يكون .glb أو .gltf');
-        glbUrl = URL.createObjectURL(file); fileUrl = glbUrl;
-        if (API_BASE && session?.token) {
-          glbUrl = await apiUpload(file, 'model', session.token); fileUrl = glbUrl;
+        if (isRemote()) {
+          glbUrl = await uploadToStorage(file, file.name, currentLessonId); fileUrl = glbUrl;
+        } else {
+          glbUrl = URL.createObjectURL(file); fileUrl = glbUrl;
         }
       }
     }
     let audioUrl = '';
     if (audioFile) {
-      if (API_BASE && session?.token) audioUrl = await apiUpload(audioFile, 'audio', session.token);
-      else audioUrl = URL.createObjectURL(audioFile);
+      audioUrl = isRemote()
+        ? await uploadToStorage(audioFile, audioFile.name, currentLessonId)
+        : URL.createObjectURL(audioFile);
     }
     bar.style.width = '80%';
-    const item = {
-      id: editingItemId || uid('itm'), kind: currentKind,
-      title, text_ar: $('itemTextAr').value.trim(), text_en: $('itemTextEn').value.trim(),
-      file_url: fileUrl, glb_url: glbUrl, placement: currentPlacement, size: currentSize,
-      audio_url: audioUrl, video_url: $('itemVideo').value.trim(),
-    };
     const lessons = getLessons(); const lesson = lessons.find((l) => l.id === currentLessonId);
+    if (!lesson) throw new Error('الدرس غير موجود');
+    lesson.items = lesson.items || [];
     if (editingItemId) {
       const old = lesson.items.find((x) => x.id === editingItemId);
-      Object.assign(old, { ...item, file_url: fileUrl || old.file_url, glb_url: glbUrl || old.glb_url, audio_url: audioUrl || old.audio_url });
+      const updated = {
+        ...old, kind: currentKind, title, text_ar: $('itemTextAr').value.trim(),
+        text_en: $('itemTextEn').value.trim(), placement: currentPlacement, size: currentSize,
+        file_url: fileUrl || old.file_url, glb_url: glbUrl || old.glb_url,
+        audio_url: audioUrl || old.audio_url, video_url: $('itemVideo').value.trim(),
+      };
+      if (isRemote()) {
+        const { error } = await supabase.from('items').update(itemRow(updated, currentLessonId, lesson.items.indexOf(old))).eq('id', editingItemId);
+        if (error) throw new Error('فشل حفظ التعديل: ' + friendlyAuthError(error));
+      }
+      Object.assign(old, updated);
       editingItemId = null; $('addItemBtn').textContent = '➕ أضف العنصر للدرس';
     } else {
-      lesson.items = lesson.items || []; lesson.items.push(item);
-      if (API_BASE && session?.token) {
-        try { await api('/api/lessons/' + currentLessonId + '/items', { method: 'POST', body: item, token: session.token }); } catch (e) { /* يبقى محليًا */ }
+      const item = {
+        id: uid('itm'), kind: currentKind,
+        title, text_ar: $('itemTextAr').value.trim(), text_en: $('itemTextEn').value.trim(),
+        file_url: fileUrl, glb_url: glbUrl, placement: currentPlacement, size: currentSize,
+        audio_url: audioUrl, video_url: $('itemVideo').value.trim(),
+      };
+      if (isRemote()) {
+        const { error } = await supabase.from('items').insert(itemRow(item, currentLessonId, lesson.items.length));
+        if (error) throw new Error('فشل حفظ العنصر: ' + friendlyAuthError(error));
       }
+      lesson.items.push(item);
     }
     saveLessons(lessons);
     bar.style.width = '100%';
@@ -383,13 +648,26 @@ function downloadQR() { const a = document.createElement('a'); a.href = $('qrCan
 let studentLesson = null, studentIndex = 0, arSupported = false;
 
 async function openStudent(id) {
-  let lesson = getLessons().find((l) => l.id === id);
-  // من الـ API إن وُجد (ويزيد عدّاد المشاهدات هناك)
-  if (API_BASE) { try { const d = await api('/api/lessons/' + id); lesson = { ...d.lesson, items: d.items }; } catch { /* fallback محلي */ } }
+  let lesson = null;
+  if (supabase) {
+    try { lesson = await fetchPublicLesson(id); } catch (e) { console.warn('Supabase lesson fetch failed', e); }
+  }
+  if (!lesson) lesson = findLocalLesson(id);
+  if (!lesson && id === 'les_demo_solar') lesson = buildDemoLesson();
   if (!lesson) { alert('الدرس غير موجود'); return showView('view-home'); }
-  // زيادة عدّاد المشاهدات محليًا
-  const lessons = getLessons(); const local = lessons.find((l) => l.id === id);
-  if (local) { local.views = (local.views || 0) + 1; saveLessons(lessons); }
+  // عدّاد المشاهدات + تسجيل الزيارة
+  if (supabase) {
+    recordVisit(id); // دون انتظار — صف واحد لكل زائر/درس/يوم
+    try {
+      await supabase.rpc('increment_lesson_views', { p_lesson_id: id });
+    } catch {
+      // رجوع: تحديث مباشر (ينجح فقط لمالك الدرس — الطالب المجهول يمنعه RLS)
+      try { await supabase.from('lessons').update({ views: (lesson.views || 0) + 1 }).eq('id', id); } catch {}
+    }
+  } else {
+    const lessons = getLessons(); const local = lessons.find((l) => l.id === id);
+    if (local) { local.views = (local.views || 0) + 1; saveLessons(lessons); }
+  }
   studentLesson = lesson; studentIndex = 0;
   $('studentTitle').textContent = lesson.title;
   $('studentMeta').textContent = `${lesson.subject || ''} • ${lesson.grade || ''} • 👁️ ${(lesson.views || 0) + 1} مشاهدة`;
@@ -457,7 +735,12 @@ async function renderStudentItem() {
 
 /* ================= صفحة الطباعة ================= */
 async function openPrint(id) {
-  const lesson = getLessons().find((l) => l.id === id);
+  let lesson = null;
+  if (supabase) {
+    try { lesson = await fetchPublicLesson(id); } catch {}
+  }
+  if (!lesson) lesson = findLocalLesson(id);
+  if (!lesson && id === 'les_demo_solar') lesson = buildDemoLesson();
   showView('view-print');
   const sheet = $('printSheet');
   if (!lesson) {
@@ -486,10 +769,14 @@ async function openPrint(id) {
 async function createLesson() {
   const title = $('newTitle').value.trim();
   if (!title) return showMsg($('dashMsg'), 'عنوان الدرس مطلوب');
-  const session = getSession();
-  const lesson = { id: uid('les'), teacher_id: session?.email || 'local', title, subject: $('newSubject').value.trim(), grade: $('newGrade').value.trim(), description: $('newDesc').value.trim(), views: 0, created_at: new Date().toISOString(), items: [] };
-  if (API_BASE && session?.token) {
-    try { const d = await api('/api/lessons', { method: 'POST', body: lesson, token: session.token }); lesson.id = d.lesson.id; } catch (e) { showMsg($('dashMsg'), e.message); return; }
+  const sess = getSession();
+  const lesson = { id: uid('les'), teacher_id: isRemote() ? sess.id : (sess?.email || 'local'), title, subject: $('newSubject').value.trim(), grade: $('newGrade').value.trim(), description: $('newDesc').value.trim(), views: 0, created_at: new Date().toISOString(), items: [] };
+  if (isRemote()) {
+    const { error } = await supabase.from('lessons').insert({
+      id: lesson.id, teacher_id: sess.id, title: lesson.title,
+      subject: lesson.subject, grade: lesson.grade, description: lesson.description,
+    });
+    if (error) { showMsg($('dashMsg'), 'تعذّر إنشاء الدرس: ' + friendlyAuthError(error)); return; }
   }
   const lessons = getLessons(); lessons.unshift(lesson); saveLessons(lessons);
   $('newTitle').value = ''; $('newSubject').value = ''; $('newGrade').value = ''; $('newDesc').value = '';
@@ -504,9 +791,27 @@ function route() {
   if (q.get('print')) return openPrint(q.get('print'));
   if (getSession()) return renderDashboard();
   showView('view-home');
+  recordVisit('/'); // زيارة الصفحة الرئيسية (صف واحد لكل زائر/يوم)
 }
-function init() {
-  seedDemoIfNeeded();
+async function init() {
+  await loadSupabaseClient();
+  if (supabase) {
+    // استعادة جلسة Supabase المحفوظة
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) await applySupabaseUser(data.session.user);
+    } catch (e) { console.warn('getSession failed', e); }
+    supabase.auth.onAuthStateChange(async (event, sess) => {
+      if (sess?.user) { if (session?.mode !== 'supabase' || session.id !== sess.user.id) await applySupabaseUser(sess.user); }
+      else if (event === 'SIGNED_OUT' && session?.mode === 'supabase') { setSession(null); lessonsCache = null; showView('view-home'); }
+    });
+  }
+  // رجوع لجلسة محلية محفوظة (الحساب التجريبي)
+  if (!session) {
+    const s = loadLocal(LS_SESSION, null);
+    if (s) { session = { ...s, mode: 'local' }; lessonsCache = null; }
+  }
+  if (!isRemote()) seedDemoIfNeeded();
   initAuth();
   segInit('kindToggle', 'kind', (v) => { currentKind = v; $('itemFile').accept = v === 'image' ? 'image/*' : '.glb,.gltf'; });
   segInit('placementToggle', 'placement', (v) => { currentPlacement = v; });
@@ -536,7 +841,11 @@ function init() {
   $('ctaDemo').onclick = () => { history.pushState(null, '', '?lesson=les_demo_solar'); openStudent('les_demo_solar'); };
   $('navHomeBtn').onclick = () => { history.pushState(null, '', location.pathname); showView('view-home'); };
   $('navDashBtn').onclick = renderDashboard;
-  $('navLogoutBtn').onclick = () => { setSession(null); showView('view-home'); };
+  $('navAdminBtn').onclick = () => { renderDashboard().then(() => { const el = $('adminSection'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }); };
+  $('navLogoutBtn').onclick = async () => {
+    if (session?.mode === 'supabase' && supabase) { try { await supabase.auth.signOut(); } catch {} }
+    setSession(null); lessonsCache = null; showView('view-home');
+  };
   route();
 }
 init();

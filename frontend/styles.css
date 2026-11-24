@@ -110,6 +110,22 @@ model-viewer{width:100%;height:340px;background:var(--soft);display:block;--post
 /* Footer */
 footer{background:var(--navy);color:var(--light-indigo);text-align:center;padding:26px 16px;margin-top:40px;font-size:14px}
 
+/* لوحة الأدمن */
+.stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:12px 0}
+@media(min-width:640px){.stats-grid{grid-template-columns:repeat(5,1fr)}}
+.stat-card{background:var(--soft);border-radius:14px;padding:14px;text-align:center}
+.stat-card .num{font-size:26px;font-weight:900;color:var(--indigo)}
+.stat-card .lbl{font-size:13px;color:var(--muted);font-weight:700}
+.table-wrap{overflow-x:auto}
+.admin-table{width:100%;border-collapse:collapse;font-size:14px}
+.admin-table th,.admin-table td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:right}
+.admin-table th{background:var(--soft)}
+.ref-row{display:flex;justify-content:space-between;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line)}
+.day-row{display:flex;align-items:center;gap:10px;padding:6px 4px}
+.day-row span{font-size:13px;min-width:92px;color:var(--muted)}
+.day-bar{flex:1;height:12px;background:var(--soft);border-radius:999px;overflow:hidden}
+.day-bar > div{height:100%;background:var(--indigo2)}
+
 /* Print — صفحة الطباعة */
 @media print{
   body{background:#fff}

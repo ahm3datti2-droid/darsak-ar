@@ -1,9 +1,9 @@
-/* درسك AR — Service Worker: cache-first للواجهة، network-first للـ API
+/* درسك AR — Service Worker: cache-first للواجهة، وطلبات Supabase شبكة فقط (لا كاش)
    مهم: عند أي تغيير في ملفات الواجهة ارفع رقم CACHE (v2, v3...) حتى يحذف
    المتصفح النسخة القديمة — وإلا يبقى يخدم نسخة قديمة من الكاش إلى الأبد. */
-const CACHE = 'darsak-ar-v2';
+const CACHE = 'darsak-ar-v3';
 const SHELL = [
-  '/', '/index.html', '/styles.css', '/app.js',
+  '/', '/index.html', '/styles.css', '/app.js', '/supabase-config.js',
   '/lib/image-to-glb.js', '/lib/qrcode-generator.min.js', '/manifest.webmanifest',
   '/public/darsak-ar-icon.png', '/public/favicon.png'
 ];
@@ -22,15 +22,10 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  // API: network-first (بيانات الدروس يجب أن تكون حديثة)
-  if (url.pathname.startsWith('/api/')) {
-    e.respondWith(
-      fetch(e.request).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-        return res;
-      }).catch(() => caches.match(e.request))
-    );
+  // طلبات Supabase (نطاق آخر): شبكة فقط — لا تُحفظ في الكاش أبدًا
+  // (بيانات الدروس والزيارات يجب أن تكون حديثة دائمًا)
+  if (url.origin !== self.location.origin) {
+    e.respondWith(fetch(e.request));
     return;
   }
   // الواجهة والملفات الثابتة: cache-first ثم الشبكة
