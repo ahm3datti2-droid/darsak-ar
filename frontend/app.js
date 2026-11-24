@@ -1348,40 +1348,56 @@ window.__copyShared = async (id) => {
 };
 
 // ---------- تفكيك المجسم (وضع الفصل) ----------
-// ملاحظة: لا نستورد three هنا — كل الأصناف (Vector3/Box3/Matrix4) تُؤخذ من كائنات
-// النموذج الحي نفسه، فلا يفشل التفكيك لو تعذّر تحميل مكتبة three من الشبكة.
+// ملاحظة مهمة (مؤكدة من مصدر model-viewer 3.5.0): mv.model ليس مشهد THREE —
+// بل كائن داخلي للخامات/الأنواع بلا position. القطع الحقيقية (THREE.Mesh)
+// موجودة في مصفوفة داخلية داخل mv.model مفتاحها Symbol؛ نجدها بمسح الرموز.
+// لا نستورد three هنا — Vector3 يُؤخذ من موضع أول قطعة حية.
 let explodeFactor = 0;
+function explodeMeshes() {
+  const mv = $('mv');
+  if (!mv || !mv.model) return null;
+  for (const sym of Object.getOwnPropertySymbols(mv.model)) {
+    const v = mv.model[sym];
+    if (Array.isArray(v) && v.length && v[0] && v[0].mesh && v[0].mesh.isMesh) {
+      const meshes = [];
+      for (const n of v) if (n.mesh && n.mesh.isMesh) meshes.push(n.mesh);
+      if (meshes.length) return meshes;
+    }
+  }
+  return null;
+}
 async function applyExplode(factor) {
-  const mv = $('mv'); if (!mv || !mv.model) return false;
-  const model = mv.model;
-  const V3 = model.position.constructor; // THREE.Vector3 من النسخة الحية
-  model.updateWorldMatrix(true, true);
+  const meshes = explodeMeshes();
+  if (!meshes) return false;
+  const V3 = meshes[0].position.constructor; // THREE.Vector3 من النسخة الحية
+  let root = meshes[0];
+  while (root.parent && root.parent.isObject3D && root.parent.type !== 'Scene') root = root.parent;
+  root.updateWorldMatrix(true, true);
   // مركز النموذج: متوسط مراكز الصناديق المحيطة بكل قطعة (في إحداثيات العالم)
   const center = new V3();
   let n = 0;
-  model.traverse((o) => {
-    if (!o.isMesh || !o.geometry) return;
+  for (const o of meshes) {
+    if (!o.geometry) continue;
     o.geometry.computeBoundingBox();
     const c = o.geometry.boundingBox.getCenter(new V3());
     c.applyMatrix4(o.matrixWorld);
     center.add(c); n++;
-  });
+  }
   if (!n) return false;
   center.divideScalar(n);
-  model.traverse((o) => {
-    if (!o.isMesh) return;
+  for (const o of meshes) {
     if (!o.userData.darsakOrig) o.userData.darsakOrig = o.position.clone();
     o.geometry.computeBoundingBox();
     const c = o.geometry.boundingBox.getCenter(new V3());
     c.applyMatrix4(o.matrixWorld);
     const dirW = c.sub(center); // اتجاه من المركز إلى القطعة (إحداثيات العالم)
-    if (dirW.lengthSq() < 1e-6) dirW.set(0, 1, 0);
+    if (dirW.lengthSq() < 1e-6) dirW.set(0, 1, 0); // مجسم من قطعة واحدة: يرتفع لأعلى
     dirW.normalize();
     // حوّل الاتجاه إلى إحداثيات الأب (الموضع المحلي للقطعة)
-    const parent = o.parent || model;
+    const parent = o.parent || root;
     const dirL = dirW.clone().transformDirection(parent.matrixWorld.clone().invert());
     o.position.copy(o.userData.darsakOrig).addScaledVector(dirL, factor);
-  });
+  }
   explodeFactor = factor;
   return true;
 }
