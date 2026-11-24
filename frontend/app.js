@@ -886,15 +886,18 @@ async function copyLessonFrom(src, suffix = '') {
   };
   if (isRemote()) {
     try { await prepareItemsForRemote(lesson.items, lesson.id); }
-    catch (e) { renderLibrary(); const ce = $('libraryCount'); if (ce) ce.textContent = '❌ تعذّر تجهيز لوحات الدرس: ' + e.message; return; }
+    catch (e) { const ce = $('libraryCount'); if (ce) ce.textContent = '❌ تعذّر تجهيز لوحات الدرس: ' + e.message; return; }
     const { error } = await supabase.from('lessons').insert({
       id: lesson.id, teacher_id: sess.id, title: lesson.title,
       subject: lesson.subject, grade: lesson.grade, description: lesson.description,
       brand_name: lesson.brand_name, brand_logo_url: lesson.brand_logo_url,
     });
-    if (error) { renderLibrary(); const ce = $('libraryCount'); if (ce) ce.textContent = '❌ تعذّر نسخ الدرس: ' + friendlyAuthError(error); return; }
+    if (error) { const ce = $('libraryCount'); if (ce) ce.textContent = '❌ تعذّر نسخ الدرس: ' + friendlyAuthError(error); return; }
     const { error: e2 } = await supabase.from('items').insert(lesson.items.map((it, i) => itemRow(it, lesson.id, i)));
-    if (e2) { renderLibrary(); const ce = $('libraryCount'); if (ce) ce.textContent = '❌ تعذّر نسخ العناصر: ' + friendlyAuthError(e2); return; }
+    if (e2) {
+      await supabase.from('lessons').delete().eq('id', lesson.id);
+      const ce = $('libraryCount'); if (ce) ce.textContent = '❌ تعذّر نسخ العناصر: ' + friendlyAuthError(e2); return;
+    }
   }
   const lessons = getLessons(); lessons.unshift(lesson); saveLessons(lessons);
   renderDashboard(); openEditor(lesson.id);
@@ -1383,16 +1386,26 @@ async function applyExplode(factor) {
   return true;
 }
 window.__toggleExplode = async () => {
+  const hint = $('explodeHint');
   const next = explodeFactor > 0 ? 0 : 0.5;
-  const ok = await applyExplode(next);
-  if (!ok) { alert('المجسّم لم يكتمل تحميله بعد — انتظر ثانية وحاول مجددًا.'); return; }
+  let ok = false;
+  try { ok = await applyExplode(next); }
+  catch (e) {
+    if (hint) hint.textContent = '❌ خطأ في التفكيك: ' + (e.message || e);
+    return;
+  }
+  if (!ok) {
+    if (hint) hint.textContent = 'المجسّم لم يكتمل تحميله بعد — انتظر ثانية وحاول مجددًا.';
+    return;
+  }
   const btn = $('explodeBtn');
   if (btn) btn.textContent = next > 0 ? '🔩 ركّب الأجزاء' : '🧩 فكّك الأجزاء';
   const rg = $('explodeRange'); if (rg) rg.value = String(Math.round((next / 0.6) * 100));
+  if (hint) hint.textContent = next > 0 ? 'المجسم مفكك الآن — حرّك المنزلق لتغيير مستوى التفكيك.' : '💡 جرّب «فكّك الأجزاء» لترى مكوّنات المجسم من الداخل.';
 };
 window.__explodeRange = (v) => {
   const f = (Number(v) / 100) * 0.6;
-  applyExplode(f);
+  applyExplode(f).catch((e) => { const hint = $('explodeHint'); if (hint) hint.textContent = '❌ خطأ في التفكيك: ' + (e.message || e); });
   const btn = $('explodeBtn');
   if (btn) btn.textContent = Number(v) > 0 ? '🔩 ركّب الأجزاء' : '🧩 فكّك الأجزاء';
 };
@@ -1547,9 +1560,15 @@ async function createLesson() {
     if (error) { showMsg($('dashMsg'), 'تعذّر إنشاء الدرس: ' + friendlyAuthError(error)); return; }
     if (lesson.items.length) {
       try { await prepareItemsForRemote(lesson.items, lesson.id); }
-      catch (e) { showMsg($('dashMsg'), 'تعذّر تجهيز عناصر القالب: ' + e.message); return; }
+      catch (e) {
+        await supabase.from('lessons').delete().eq('id', lesson.id);
+        showMsg($('dashMsg'), 'تعذّر تجهيز عناصر القالب: ' + e.message + ' — لم يُنشأ الدرس، حاول مجددًا.'); return;
+      }
       const { error: e2 } = await supabase.from('items').insert(lesson.items.map((it, i) => itemRow(it, lesson.id, i)));
-      if (e2) { showMsg($('dashMsg'), 'تعذّر حفظ عناصر القالب: ' + friendlyAuthError(e2)); return; }
+      if (e2) {
+        await supabase.from('lessons').delete().eq('id', lesson.id);
+        showMsg($('dashMsg'), 'تعذّر حفظ عناصر القالب: ' + friendlyAuthError(e2) + ' — لم يُنشأ الدرس، حاول مجددًا.'); return;
+      }
     }
   }
   const lessons = getLessons(); lessons.unshift(lesson); saveLessons(lessons);

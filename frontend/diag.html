@@ -20,6 +20,7 @@
 <script type="module">
 import { textPanelToGlb } from './lib/image-to-glb.js';
 const out = (id, s) => { document.getElementById(id).textContent = s; };
+window.addEventListener('error', (e) => { out('explodeOut', 'PAGE ERROR: ' + (e.message || e.error)); });
 document.getElementById('runPanels').onclick = async () => {
   const texts = ['1- البيضة 🥚', '2- اليرقة 🐛', '3- الشرنقة', '4- الفراشة 🦋', 'المجموعة الشمسية ☀️'];
   let log = '';
@@ -34,6 +35,7 @@ document.getElementById('runPanels').onclick = async () => {
   out('panelOut', log);
 };
 document.getElementById('runExplode').onclick = async () => {
+  out('explodeOut', 'RUNNING... (الزر يعمل — جارٍ فحص النموذج)');
   const mv = document.getElementById('mv');
   let log = `mv exists: ${!!mv}\nmodel exists: ${!!mv.model}\n`;
   if (!mv || !mv.model) { out('explodeOut', log + 'MODEL NOT LOADED'); return; }
