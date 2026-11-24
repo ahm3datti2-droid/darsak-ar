@@ -211,3 +211,40 @@ export const LIBRARY = {
     },
   ],
 };
+
+// قوالب جاهزة لإنشاء درس جديد — المعلّم يختار القالب ثم يعدّل العناوين والشرح.
+export const TEMPLATES = [
+  {
+    id: 'blank', title: 'درس فارغ (عادي)',
+    description: 'ابدأ من الصفر وأضف عناصرك بنفسك.',
+    items: [],
+  },
+  {
+    id: 'parts', title: '🧩 قالب: درس أجزاء',
+    description: 'مثال: القلب — 3 أجزاء، كل جزء مع سؤال. عدّل العناوين والشرح لدرسك.',
+    items: [
+      { kind: 'image', title: 'الأذين', text_ar: 'الأذين يستقبل الدم القادم من الجسم والرئتين، ثم يدفعه إلى البطين.', text_en: '', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: 'الأذين ❤️', quiz: { q: 'ما وظيفة الأذين؟', choices: [ { t: 'يستقبل الدم', ok: true }, { t: 'يضخ الدم للجسم', ok: false }, { t: 'ينقّي الدم', ok: false } ] } },
+      { kind: 'image', title: 'البطين', text_ar: 'البطين يضخ الدم بقوة: البطين الأيمن إلى الرئتين، والبطين الأيسر إلى كل الجسم.', text_en: '', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: 'البطين ❤️', quiz: { q: 'أين يضخ البطين الأيسر الدم؟', choices: [ { t: 'إلى كل الجسم', ok: true }, { t: 'إلى الرئتين فقط', ok: false }, { t: 'إلى المعدة فقط', ok: false } ] } },
+      { kind: 'image', title: 'الصمامات', text_ar: 'الصمامات أبواب صغيرة تمنع الدم من الرجوع للخلف، فيسير في اتجاه واحد.', text_en: '', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: 'الصمامات', quiz: { q: 'ما فائدة الصمامات؟', choices: [ { t: 'تمنع رجوع الدم', ok: true }, { t: 'تزيد سرعة الدم', ok: false }, { t: 'تصنع الدم', ok: false } ] } },
+    ],
+  },
+  {
+    id: 'stages', title: '🔄 قالب: درس مراحل',
+    description: 'مثال: دورة حياة الفراشة — 4 مراحل بالترتيب. بدّل المراحل بمراحل درسك.',
+    items: [
+      { kind: 'image', title: '1- البيضة', text_ar: 'تضع الفراشة بيضها على أوراق النبات، وتفقس البيضة بعد أيام قليلة.', text_en: '', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: '1- البيضة 🥚', quiz: { q: 'أين تضع الفراشة بيضها؟', choices: [ { t: 'على أوراق النبات', ok: true }, { t: 'في الماء', ok: false }, { t: 'تحت الأرض', ok: false } ] } },
+      { kind: 'image', title: '2- اليرقة', text_ar: 'تخرج اليرقة (الدودة) من البيضة وتأكل أوراق النبات وتنمو بسرعة.', text_en: '', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: '2- اليرقة 🐛', quiz: { q: 'ماذا تأكل اليرقة؟', choices: [ { t: 'أوراق النبات', ok: true }, { t: 'الحشرات', ok: false }, { t: 'الرحيق', ok: false } ] } },
+      { kind: 'image', title: '3- الشرنقة', text_ar: 'تتحول اليرقة إلى شرنقة ساكنة، وبداخلها يتغير جسمها تمامًا.', text_en: '', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: '3- الشرنقة', quiz: { q: 'ماذا يحدث داخل الشرنقة؟', choices: [ { t: 'يتغير الجسم تمامًا', ok: true }, { t: 'تنام اليرقة فقط', ok: false }, { t: 'تأكل اليرقة', ok: false } ] } },
+      { kind: 'image', title: '4- الفراشة', text_ar: 'تخرج الفراشة بأجنحة ملونة وتطير لتبحث عن الرحيق وتضع البيض من جديد.', text_en: '', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: '4- الفراشة 🦋', quiz: { q: 'ما آخر مرحلة في دورة حياة الفراشة؟', choices: [ { t: 'الفراشة', ok: true }, { t: 'اليرقة', ok: false }, { t: 'الشرنقة', ok: false } ] } },
+    ],
+  },
+  {
+    id: 'compare', title: '⚖️ قالب: درس مقارنة',
+    description: 'مجسمان جنب بعض مع سؤال مقارنة — بدّل المجسمين والسؤال بدرسك.',
+    items: [
+      { kind: 'model', title: 'الحصان', text_ar: 'الحصان حيوان بري سريع، يعيش على الأرض ويأكل الأعشاب.', text_en: '', file_url: MODELS + 'Horse.glb', glb_url: MODELS + 'Horse.glb', placement: 'floor', size: 'large', audio_url: '', video_url: '', quiz: { q: 'أين يعيش الحصان؟', choices: [ { t: 'على الأرض', ok: true, pos: [0, 1.0, 0] }, { t: 'في الماء', ok: false, pos: [0.55, 1.15, 0] }, { t: 'في السماء', ok: false, pos: [-0.6, 1.0, 0] } ] } },
+      { kind: 'model', title: 'الروبوت', text_ar: 'الروبوت آلة صنعها الإنسان، تعمل بالكهرباء وتنفذ أوامر مبرمجة.', text_en: '', file_url: MODELS + 'RobotExpressive.glb', glb_url: MODELS + 'RobotExpressive.glb', placement: 'floor', size: 'medium', audio_url: '', video_url: '', quiz: { q: 'بماذا يعمل الروبوت؟', choices: [ { t: 'بالكهرباء', ok: true, pos: [0, 0.35, 0.15] }, { t: 'بالطعام', ok: false, pos: [0.25, 0.4, 0.1] }, { t: 'بالماء', ok: false, pos: [0, 0.62, 0.1] } ] } },
+      { kind: 'image', title: 'وجه المقارنة', text_ar: 'قارن: الحصان كائن حي يأكل وينمو ويتكاثر، أما الروبوت فآلة لا تأكل ولا تنمو — لكنها تنفذ الأوامر بدقة وسرعة.', text_en: '', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: 'كائن حي 🆚 آلة', quiz: { q: 'ما الفرق الأساسي بين الحصان والروبوت؟', choices: [ { t: 'الحصان كائن حي والروبوت آلة', ok: true }, { t: 'الروبوت أسرع دائمًا', ok: false }, { t: 'لا يوجد فرق', ok: false } ] } },
+    ],
+  },
+];

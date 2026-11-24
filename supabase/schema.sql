@@ -81,6 +81,15 @@ create index if not exists idx_activity_lesson on public.student_activity (lesso
 -- عمود الأسئلة في عناصر الدرس (JSON: {q, choices:[{t, ok, pos?}]})
 alter table public.items add column if not exists quiz jsonb;
 
+-- براندنج المعلّم (اسم السنتر + شعاره) — يُنسخ على الدروس ليراه الطلاب دون كشف بريد المعلّم
+alter table public.teachers add column if not exists brand_name text not null default '';
+alter table public.teachers add column if not exists brand_logo_url text not null default '';
+-- مشاركة الدروس بين المعلّمين + نسخة البراندنج على كل درس
+alter table public.lessons add column if not exists shared boolean not null default false;
+alter table public.lessons add column if not exists brand_name text not null default '';
+alter table public.lessons add column if not exists brand_logo_url text not null default '';
+create index if not exists idx_lessons_shared on public.lessons (shared, created_at desc);
+
 -- ================= الفهارس =================
 create index if not exists idx_lessons_teacher on public.lessons (teacher_id);
 create index if not exists idx_lessons_created on public.lessons (created_at desc);

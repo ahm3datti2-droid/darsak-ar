@@ -1,10 +1,10 @@
 /* درسك AR — Service Worker: cache-first للواجهة، وطلبات Supabase شبكة فقط (لا كاش)
    مهم: عند أي تغيير في ملفات الواجهة ارفع رقم CACHE (v2, v3...) حتى يحذف
    المتصفح النسخة القديمة — وإلا يبقى يخدم نسخة قديمة من الكاش إلى الأبد. */
-const CACHE = 'darsak-ar-v11';
+const CACHE = 'darsak-ar-v12';
 const SHELL = [
   '/', '/index.html', '/styles.css', '/app.js', '/supabase-config.js',
-  '/lib/image-to-glb.js', '/lib/qrcode-generator.min.js', '/manifest.webmanifest',
+  '/lib/image-to-glb.js', '/lib/qrcode-generator.min.js', '/lib/curriculum.js', '/manifest.webmanifest',
   '/public/darsak-ar-icon.png', '/public/favicon.png'
 ];
 
@@ -14,18 +14,20 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
+    // الدروس المنزّلة دون نت لها كاش منفصل (darsak-lessons-v1) — لا يُحذف أبدًا عند تحديث الواجهة
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => k !== CACHE && !k.startsWith('darsak-lessons')).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  // طلبات Supabase (نطاق آخر): شبكة فقط — لا تُحفظ في الكاش أبدًا
-  // (بيانات الدروس والزيارات يجب أن تكون حديثة دائمًا)
+  // طلبات نطاق آخر (نماذج .glb من modelviewer.dev وملفات Supabase):
+  // تُخدم من كاش الدروس المنزّلة إن وُجدت (للعمل دون نت)، وإلا من الشبكة — ولا تُحفظ هنا أبدًا
+  // (طلبات API إلى supabase.co ليست في كاش الدروس، فتبقى شبكة فقط دائمًا)
   if (url.origin !== self.location.origin) {
-    e.respondWith(fetch(e.request));
+    e.respondWith(caches.match(e.request).then((cached) => cached || fetch(e.request)));
     return;
   }
   // الواجهة والملفات الثابتة: cache-first ثم الشبكة

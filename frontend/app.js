@@ -31,6 +31,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const uid = (p) => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 const LS_STUDENT = 'darsak.student.v1'; // اسم الطالب (لتقارير المعلّم)
 const LS_ACTIVITY = 'darsak.activity.v1'; // نسخة محلية من نشاط الطلاب (احتياطي دون اتصال)
+const LS_OFFLINE = 'darsak.offline.v1'; // دروس منزّلة للاستخدام دون نت (lessonId -> lesson)
+const LS_BADGES = 'darsak.badges.v1'; // شارات الطالب المحلية (name -> [badgeId])
 
 /* ================= مكتبة المنهج (تُحمَّل عند الطلب فقط) ================= */
 let libraryCache = null;
@@ -219,7 +221,7 @@ async function recordVisit(path) {
 }
 
 /* ================= التنقّل بين الصفحات ================= */
-const VIEWS = ['view-home', 'view-auth', 'view-dashboard', 'view-editor', 'view-student', 'view-print', 'view-library'];
+const VIEWS = ['view-home', 'view-auth', 'view-dashboard', 'view-editor', 'view-student', 'view-print', 'view-library', 'view-worksheet'];
 function showView(id) {
   VIEWS.forEach((v) => $(v).classList.toggle('hidden', v !== id));
   window.scrollTo({ top: 0 });
@@ -234,7 +236,7 @@ function publicLink(lessonId) { return location.origin + location.pathname + '?l
 let authMode = 'login'; // أو signup
 
 async function fetchProfile(userId) {
-  const { data } = await supabase.from('teachers').select('id,email,name,is_admin').eq('id', userId).maybeSingle();
+  const { data } = await supabase.from('teachers').select('id,email,name,is_admin,brand_name,brand_logo_url').eq('id', userId).maybeSingle();
   return data || null;
 }
 async function applySupabaseUser(user) {
@@ -248,6 +250,7 @@ async function applySupabaseUser(user) {
     id: user.id, email: user.email,
     name: profile?.name || user.email.split('@')[0],
     is_admin: !!profile?.is_admin, mode: 'supabase',
+    brand_name: profile?.brand_name || '', brand_logo_url: profile?.brand_logo_url || '',
   });
   lessonsCache = null;
 }
@@ -334,6 +337,8 @@ async function renderDashboard() {
   const sess = getSession();
   if (!sess) { showView('view-auth'); return; }
   $('teacherName').textContent = displayName(sess);
+  const bn = $('brandName'); if (bn) bn.value = sess.brand_name || '';
+  const bp = $('brandPreview'); if (bp) bp.innerHTML = sess.brand_logo_url ? `<img src="${esc(sess.brand_logo_url)}" alt="شعار السنتر" style="width:64px;height:64px;border-radius:12px;object-fit:cover">` : '';
   $('lessonsHeading').textContent = isAdmin() ? 'كل الدروس — عرض الأدمن' : 'دروسي';
   showView('view-dashboard');
   let lessons;
@@ -362,6 +367,8 @@ async function renderDashboard() {
           <button class="btn btn-ghost btn-sm" onclick="window.__openStudent('${l.id}')">👀 عرض الطالب</button>
           <button class="btn btn-ghost btn-sm" onclick="window.__openPrint('${l.id}')">🖨️ طباعة QR</button>
           <button class="btn btn-ghost btn-sm" onclick="window.__startLive('${l.id}')">📡 حصة مباشرة</button>
+          <button class="btn btn-ghost btn-sm" onclick="window.__toggleShare('${l.id}')">${l.shared ? '✓ مشترك' : '🔗 مشاركة مع المعلمين'}</button>
+          <button class="btn btn-ghost btn-sm" onclick="window.__openWorksheet('${l.id}')">📄 ورقة شغل</button>
           <button class="btn btn-danger btn-sm" onclick="window.__deleteLesson('${l.id}')">🗑️ حذف</button>
         </div>
       </div>
@@ -655,17 +662,27 @@ if (typeof QRCode === 'undefined' && typeof qrcode !== 'undefined') {
 }
 
 /* ================= QR ================= */
+// يرسم شعارًا في منتصف لوحة QR (براندنج المعلّم أو شعار المنصة) — يُستدعى بعد رسم الرمز
+async function drawQrLogo(canvas, logoUrl, size = 110) {
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  if (/^https?:/.test(logoUrl || '')) img.crossOrigin = 'anonymous';
+  img.src = logoUrl || '/public/darsak-ar-icon.png';
+  await new Promise((res) => { img.onload = res; img.onerror = res; });
+  if (!img.naturalWidth) return;
+  const s = size, x = (canvas.width - s) / 2, y = (canvas.height - s) / 2;
+  ctx.fillStyle = '#fff';
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x - 8, y - 8, s + 16, s + 16, 18); ctx.fill(); }
+  else ctx.fillRect(x - 8, y - 8, s + 16, s + 16);
+  ctx.drawImage(img, x, y, s, s);
+}
+function brandLogoUrl() { return getSession()?.brand_logo_url || '/public/darsak-ar-icon.png'; }
 async function drawQR(text) {
   const canvas = $('qrCanvas');
   try {
     await QRCode.toCanvas(canvas, text, { width: 520, margin: 2, color: { dark: '#1E1B4B', light: '#ffffff' } });
-    // الشعار في المنتصف
-    const ctx = canvas.getContext('2d');
-    const img = new Image(); img.src = '/public/darsak-ar-icon.png';
-    await new Promise((res) => { img.onload = res; img.onerror = res; });
-    const s = 110, x = (canvas.width - s) / 2, y = (canvas.height - s) / 2;
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(x - 8, y - 8, s + 16, s + 16, 18); ctx.fill();
-    ctx.drawImage(img, x, y, s, s);
+    // الشعار في المنتصف (براندنج المعلّم إن وُجد، وإلا شعار المنصة)
+    await drawQrLogo(canvas, brandLogoUrl());
   } catch (e) {
     console.warn('QR failed', e);
     // لا تترك مساحة بيضاء صامتة أبدًا: اكتب رسالة واضحة على اللوحة
@@ -684,7 +701,8 @@ let studentLesson = null, studentIndex = 0, arSupported = false;
 
 async function openStudent(id) {
   let lesson = null;
-  if (supabase) {
+  if (!navigator.onLine) lesson = findOfflineLesson(id);
+  if (!lesson && supabase) {
     try { lesson = await fetchPublicLesson(id); } catch (e) { console.warn('Supabase lesson fetch failed', e); }
   }
   if (!lesson) lesson = findLocalLesson(id);
@@ -708,8 +726,17 @@ async function openStudent(id) {
   else { lesson.views = (lesson.views || 0) + 1; }
   studentLesson = lesson; studentIndex = 0;
   startStudentSession(lesson);
+  const q0 = new URLSearchParams(location.search);
+  const it0 = parseInt(q0.get('item') || '0', 10);
+  if (it0 > 0 && it0 < (lesson.items || []).length) studentIndex = it0;
   $('studentTitle').textContent = lesson.title;
   $('studentMeta').textContent = `${lesson.subject || ''} • ${lesson.grade || ''} • 👁️ ${lesson.views || 0} مشاهدة`;
+  const brandEl = $('studentBrand');
+  if (brandEl) {
+    brandEl.innerHTML = (lesson.brand_name || lesson.brand_logo_url)
+      ? `${lesson.brand_logo_url ? `<img src="${esc(lesson.brand_logo_url)}" alt="" style="width:52px;height:52px;border-radius:12px;object-fit:cover;vertical-align:middle">` : ''} <b style="font-size:19px">${esc(lesson.brand_name || '')}</b>`
+      : '';
+  }
   showView('view-student');
   renderStudentItem();
   // هل يدعم الجهاز AR؟ (WebXR أو Scene Viewer)
@@ -734,6 +761,7 @@ async function textPanelDataUrl(text) {
 async function renderStudentItem() {
   const items = studentLesson.items || [];
   if (!items.length) { $('studentItems').innerHTML = '<div class="card">هذا الدرس بلا عناصر بعد.</div>'; return; }
+  explodeFactor = 0;
   const it = items[studentIndex];
   const src = await itemGlbUrl(it);
   const scale = SIZE_M[it.size] || 1;
@@ -756,6 +784,7 @@ async function renderStudentItem() {
         ${it.text_en ? `<p class="hint" dir="ltr" style="text-align:left">${esc(it.text_en)}</p>` : ''}
         ${!arSupported ? `<div class="ar-fallback">⚠️ هاتفك لا يدعم الواقع المعزّز (AR) — يمكنك تدوير النموذج بإصبعك على الشاشة ومشاهدته بتقنية 3D. جرّب متصفح Chrome على أندرويد حديث يدعم ARCore.</div>` : ''}
         <button class="btn btn-orange" id="launchArBtn" type="button">📷 ${it.placement === 'floor' ? 'اعرض على الأرض' : 'اعرض على الحيطة'}</button>
+        ${it.kind === 'model' ? `<div class="row" style="align-items:center"><button class="btn btn-ghost" id="explodeBtn" type="button" onclick="window.__toggleExplode()">🧩 فكّك الأجزاء</button><input type="range" id="explodeRange" min="0" max="100" value="0" style="flex:1" oninput="window.__explodeRange(this.value)" aria-label="مستوى التفكيك"></div>` : ''}
         ${it.audio_url ? `<div style="margin-top:12px"><button class="btn btn-ghost audio-btn" id="playAudioBtn" type="button">🔊 اسمع الشرح الصوتي</button><audio id="itemAudioEl" src="${esc(it.audio_url)}" preload="none"></audio></div>` : ''}
         ${yt ? `<div class="video-wrap"><iframe src="https://www.youtube.com/embed/${yt}" allowfullscreen loading="lazy" title="فيديو الشرح"></iframe></div>`
           : (it.video_url ? `<p style="margin-top:12px"><a href="${esc(it.video_url)}" target="_blank" rel="noopener">🎬 شاهد الفيديو</a></p>` : '')}
@@ -796,6 +825,7 @@ async function openLibrary() {
   $('libSubject').onchange = (e) => { libFilters.subject = e.target.value; renderLibrary(); };
   $('libTerm').onchange = (e) => { libFilters.term = e.target.value; renderLibrary(); };
   renderLibrary();
+  renderShared();
 }
 function renderLibrary() {
   const lib = libraryCache; if (!lib) return;
@@ -826,6 +856,9 @@ function renderLibrary() {
 async function copyLibraryLesson(id) {
   const src = await findLibraryLesson(id);
   if (!src) { alert('الدرس غير موجود في المكتبة'); return; }
+  await copyLessonFrom(src, ' (من مكتبة المنهج)');
+}
+async function copyLessonFrom(src, suffix = '') {
   const sess = getSession();
   if (!sess) { showView('view-auth'); return; }
   const countEl = $('libraryCount');
@@ -833,25 +866,19 @@ async function copyLibraryLesson(id) {
   const lesson = {
     id: uid('les'), teacher_id: isRemote() ? sess.id : (sess?.email || 'local'),
     title: src.title, subject: src.subject, grade: src.grade,
-    description: (src.description || '') + ' (من مكتبة المنهج)',
+    description: (src.description || '') + suffix,
     views: 0, created_at: new Date().toISOString(),
     items: src.items.map((it) => ({ ...it, id: uid('itm') })),
+    brand_name: sess?.brand_name || '', brand_logo_url: sess?.brand_logo_url || '',
+    shared: false,
   };
   if (isRemote()) {
-    // لوحات النص لا تُحفظ في جدول items — حوّلها إلى .glb وارفعها للتخزين أولًا
-    try {
-      const { textPanelToGlb } = await import('./lib/image-to-glb.js');
-      for (const it of lesson.items) {
-        if (it.textPanel && !it.glb_url) {
-          const { blob } = await textPanelToGlb(it.textPanel, { bg: '#4F46E5' });
-          it.glb_url = await uploadToStorage(new File([blob], 'panel.glb', { type: 'model/gltf-binary' }), 'panel.glb', lesson.id);
-          it.file_url = it.glb_url;
-        }
-      }
-    } catch (e) { renderLibrary(); alert('تعذّر تجهيز لوحات الدرس: ' + e.message); return; }
+    try { await prepareItemsForRemote(lesson.items, lesson.id); }
+    catch (e) { renderLibrary(); alert('تعذّر تجهيز لوحات الدرس: ' + e.message); return; }
     const { error } = await supabase.from('lessons').insert({
       id: lesson.id, teacher_id: sess.id, title: lesson.title,
       subject: lesson.subject, grade: lesson.grade, description: lesson.description,
+      brand_name: lesson.brand_name, brand_logo_url: lesson.brand_logo_url,
     });
     if (error) { renderLibrary(); alert('تعذّر نسخ الدرس: ' + friendlyAuthError(error)); return; }
     const { error: e2 } = await supabase.from('items').insert(lesson.items.map((it, i) => itemRow(it, lesson.id, i)));
@@ -1048,11 +1075,16 @@ window.__finishLesson = async () => {
   await saveActivity();
   const t = quizTotals();
   const mins = Math.max(1, Math.round(activitySeconds / 60));
+  const myRows = myActivityRows();
+  const stats = studentStats(myRows);
+  const myBadges = badgesFor(myRows);
   const box = $('finishResult');
   box.classList.remove('hidden');
   box.innerHTML = `<h3>🏁 انتهى الدرس!</h3>
     <p>⏱️ قضيت حوالي <b>${mins} دقيقة</b> في هذا الدرس.</p>
     <p>❓ نتيجتك في الأسئلة: <b>${t.total ? `${t.score} من ${t.total} (${Math.round((t.score / t.total) * 100)}%)` : 'لا توجد أسئلة في هذا الدرس'}</b></p>
+    <p>⭐ نقاطك حتى الآن: <b>${stats.points}</b> (كل إجابة صحيحة +5، وإنهاء الدرس +10)</p>
+    ${myBadges.length ? `<p>🎖️ شاراتك: ${myBadges.map((b) => `${b.icon} ${b.title}`).join(' • ')}</p>` : ''}
     <p class="hint">تم حفظ تقريرك عند المعلّم ✅ — يمكنك تصفّح الدرس مرة أخرى من الأعلى.</p>`;
   box.scrollIntoView({ behavior: 'smooth', block: 'center' });
 };
@@ -1080,16 +1112,23 @@ async function renderReports() {
   const agg = {};
   rows.forEach((r) => {
     const k = (r.student_name || '؟') + '|' + r.lesson_id;
-    const a = agg[k] || (agg[k] = { student: r.student_name || '؟', lesson: r.lesson_id, seconds: 0, best: 0, total: 0, count: 0, last: '' });
-    a.seconds += r.seconds || 0; a.count++;
+    const a = agg[k] || (agg[k] = { student: r.student_name || '؟', lesson: r.lesson_id, seconds: 0, best: 0, total: 0, count: 0, last: '', points: 0 });
+    a.seconds += r.seconds || 0; a.count++; a.points += pointsForRow(r);
     if (r.quiz_total) { a.best = Math.max(a.best, Math.round((r.quiz_score / r.quiz_total) * 100)); a.total++; }
     if (!a.last || (r.created_at || '') > a.last) a.last = r.created_at || '';
   });
   reportAggCache = Object.values(agg).sort((a, b) => (b.last || '').localeCompare(a.last || ''));
-  box.innerHTML = reportAggCache.length ? `<div class="table-wrap"><table class="admin-table">
-    <tr><th>الطالب</th><th>الدرس</th><th>الوقت</th><th>أفضل نتيجة</th><th>آخر نشاط</th><th></th></tr>
-    ${reportAggCache.map((a, i) => `<tr><td>${esc(a.student)}</td><td>${esc(title(a.lesson))}</td><td>${fmtMins(a.seconds)}</td><td>${a.total ? a.best + '%' : '—'}</td><td>${a.last ? a.last.slice(0, 10) : ''}</td><td><button class="btn btn-ghost btn-sm" type="button" onclick="window.__waReport(${i})">📲 واتساب لولي الأمر</button></td></tr>`).join('')}
-  </table></div>` : '<p class="hint">لا توجد تقارير بعد — ستظهر هنا بعد أن يفتح الطلاب دروسك ويجيبوا على الأسئلة.</p>';
+  const byStudent = {};
+  rows.forEach((r) => { const k = r.student_name || '؟'; (byStudent[k] = byStudent[k] || []).push(r); });
+  const board = Object.entries(byStudent).map(([name, rs]) => ({ name, ...studentStats(rs) })).sort((a, b) => b.points - a.points).slice(0, 10);
+  const boardHtml = board.length ? `<h3>🏆 لوحة شرف الفصل</h3><div class="table-wrap"><table class="admin-table">
+    <tr><th>#</th><th>الطالب</th><th>النقاط</th><th>دروس</th><th>إجابات صحيحة</th><th>شارات</th></tr>
+    ${board.map((b, i) => `<tr><td>${i + 1}</td><td>${esc(b.name)}</td><td><b>${b.points}</b></td><td>${b.lessons}</td><td>${b.correct}</td><td>${badgesFor(byStudent[b.name]).map((x) => x.icon + ' ' + x.title).join(' • ') || '—'}</td></tr>`).join('')}
+  </table></div>` : '';
+  box.innerHTML = boardHtml + (reportAggCache.length ? `<div class="table-wrap"><table class="admin-table">
+    <tr><th>الطالب</th><th>الدرس</th><th>الوقت</th><th>النقاط</th><th>أفضل نتيجة</th><th>آخر نشاط</th><th></th></tr>
+    ${reportAggCache.map((a, i) => `<tr><td>${esc(a.student)}</td><td>${esc(title(a.lesson))}</td><td>${fmtMins(a.seconds)}</td><td><b>${a.points || 0}</b></td><td>${a.total ? a.best + '%' : '—'}</td><td>${a.last ? a.last.slice(0, 10) : ''}</td><td><button class="btn btn-ghost btn-sm" type="button" onclick="window.__waReport(${i})">📲 واتساب لولي الأمر</button></td></tr>`).join('')}
+  </table></div>` : '<p class="hint">لا توجد تقارير بعد — ستظهر هنا بعد أن يفتح الطلاب دروسك ويجيبوا على الأسئلة.</p>');
 }
 window.__waReport = (i) => {
   const a = reportAggCache[i]; if (!a) return;
@@ -1099,6 +1138,291 @@ window.__waReport = (i) => {
   const text = `📚 تقرير درسك AR — الطالب: ${a.student}\nالدرس: ${title}\nالوقت داخل الدرس: ${fmtMins(a.seconds)}\nأفضل نتيجة في الأسئلة: ${a.total ? a.best + '%' : 'لم يجب على أسئلة بعد'}`;
   window.open('https://wa.me/' + phone.replace(/\D/g, '') + '?text=' + encodeURIComponent(text), '_blank');
 };
+
+/* ================= الإصدار 3: براندنج + دون نت + ورقة شغل + مشاركة + قوالب + تفكيك + صور + نقاط ================= */
+
+// ---------- براندنج المعلّم ----------
+async function saveBrand() {
+  const sess = getSession(); if (!sess) return;
+  const name = $('brandName').value.trim();
+  const file = $('brandLogo').files[0];
+  let logoUrl = sess.brand_logo_url || '';
+  try {
+    if (file) {
+      if (!checkFileSize(file)) return;
+      logoUrl = isRemote()
+        ? await uploadToStorage(file, file.name, 'brand')
+        : URL.createObjectURL(file);
+    }
+    if (isRemote()) {
+      const { error } = await supabase.from('teachers').update({ brand_name: name, brand_logo_url: logoUrl }).eq('id', sess.id);
+      if (error) throw new Error(friendlyAuthError(error));
+      await supabase.from('lessons').update({ brand_name: name, brand_logo_url: logoUrl }).eq('teacher_id', sess.id);
+    } else {
+      try { localStorage.setItem('darsak.brand.v1', JSON.stringify({ name, logo: logoUrl })); } catch {}
+      const lessons = getLessons();
+      lessons.forEach((l) => { l.brand_name = name; l.brand_logo_url = logoUrl; });
+      saveLessons(lessons);
+    }
+    sess.brand_name = name; sess.brand_logo_url = logoUrl;
+    lessonsCache = null;
+    showMsg($('brandMsg'), 'تم حفظ البراندنج ✅ — سيظهر اسم السنتر وشعاره للطلاب وفي الـ QR', true);
+    renderDashboard();
+  } catch (e) { showMsg($('brandMsg'), 'تعذّر حفظ البراندنج: ' + (e.message || e)); }
+}
+window.__saveBrand = saveBrand;
+
+// ---------- دون نت ----------
+function findOfflineLesson(id) {
+  const map = loadLocal(LS_OFFLINE, {});
+  return map[id] || null;
+}
+async function downloadLessonOffline() {
+  if (!studentLesson) return;
+  const btn = $('downloadOfflineBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ جارٍ التنزيل...'; }
+  try {
+    const map = loadLocal(LS_OFFLINE, {});
+    map[studentLesson.id] = studentLesson;
+    saveLocal(LS_OFFLINE, map);
+    const urls = [];
+    (studentLesson.items || []).forEach((it) => {
+      if (it.glb_url) urls.push(it.glb_url);
+      if (it.file_url && it.file_url !== it.glb_url && !String(it.file_url).startsWith('blob:')) urls.push(it.file_url);
+      if (it.audio_url) urls.push(it.audio_url);
+    });
+    if (urls.length && 'caches' in window) {
+      const cache = await caches.open('darsak-lessons-v1');
+      await Promise.allSettled(urls.map((u) => cache.add(u).catch(() => {})));
+    }
+    if (btn) btn.textContent = '✅ تم التنزيل — يعمل دون نت';
+    renderOfflineList();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇️ نزّل الدرس دون نت'; }
+    alert('تعذّر التنزيل: ' + e.message);
+  }
+}
+function renderOfflineList() {
+  const box = $('offlineList'); const sec = $('offlineSection');
+  if (!box || !sec) return;
+  const list = Object.values(loadLocal(LS_OFFLINE, {}));
+  sec.classList.toggle('hidden', !list.length);
+  box.innerHTML = list.map((l) => `
+    <div class="card lib-card">
+      <div class="thumb">📴</div>
+      <div class="lesson-meta">
+        <h3>${esc(l.title)}</h3>
+        <span class="badge">${esc(l.subject || '')}</span>
+        <span class="badge">${esc(l.grade || '')}</span>
+        <span class="badge">${(l.items || []).length} عنصر</span>
+        <div class="row">
+          <button class="btn btn-primary btn-sm" onclick="window.__openStudent('${l.id}')">👀 فتح دون نت</button>
+          <button class="btn btn-danger btn-sm" onclick="window.__removeOffline('${l.id}')">🗑️ حذف</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+window.__downloadOffline = downloadLessonOffline;
+window.__removeOffline = (id) => { const map = loadLocal(LS_OFFLINE, {}); delete map[id]; saveLocal(LS_OFFLINE, map); renderOfflineList(); };
+
+// ---------- ورقة شغل AR مطبوعة ----------
+async function resolveLesson(id) {
+  let lesson = null;
+  if (supabase) { try { lesson = await fetchPublicLesson(id); } catch {} }
+  if (!lesson) lesson = findLocalLesson(id);
+  if (!lesson) lesson = await findLibraryLesson(id);
+  if (!lesson) lesson = findOfflineLesson(id);
+  if (!lesson && id === 'les_demo_solar') lesson = buildDemoLesson();
+  return lesson;
+}
+async function openWorksheet(id) {
+  const lesson = await resolveLesson(id);
+  showView('view-worksheet');
+  const sheet = $('worksheetSheet');
+  if (!lesson) { sheet.innerHTML = '<h2>الدرس غير موجود</h2><p>الرابط غير صحيح أو أن الدرس حُذف.</p>'; return; }
+  const items = lesson.items || [];
+  const quizItems = items.map((it, i) => ({ it, i })).filter(({ it }) => it.quiz);
+  sheet.innerHTML = `
+    <img class="logo" src="/public/darsak-ar-icon.png" alt="درسك AR">
+    <h1>درسك <span style="font-family:'Space Grotesk';background:#EA580C;color:#fff;border-radius:999px;padding:2px 10px">AR</span></h1>
+    ${lesson.brand_name ? `<p style="font-size:20px;font-weight:900">🏫 ${esc(lesson.brand_name)}</p>` : ''}
+    <h2>📄 ورقة شغل: ${esc(lesson.title)}</h2>
+    <p>${esc(lesson.subject || '')} • ${esc(lesson.grade || '')}</p>
+    <p class="ws-meta">الاسم: ______________________ &nbsp; التاريخ: ____ / ____ / ________</p>
+    ${quizItems.length ? quizItems.map(({ it, i }) => `
+      <div class="ws-q">
+        <h3>${esc(it.title)}</h3>
+        <p><b>❓ ${esc(it.quiz.q)}</b></p>
+        <div class="ws-choices">${it.quiz.choices.map((c) => `<p>☐ ${esc(c.t)}</p>`).join('')}</div>
+        <p>امسح الرمز بكاميرا الموبايل لمشاهدة المجسم وحل السؤال:</p>
+        <canvas class="ws-qr" width="160" height="160" data-link="${esc(publicLink(id) + '&item=' + i)}"></canvas>
+      </div>`).join('') : '<p>هذا الدرس بلا أسئلة بعد — أضف أسئلة من المحرر لتظهر في ورقة الشغل.</p>'}
+    <div class="ws-notes"><h3>ملاحظات:</h3><p>________________________________________________________</p><p>________________________________________________________</p></div>
+    <p class="hint">${esc(publicLink(id))}</p>`;
+  for (const c of sheet.querySelectorAll('.ws-qr')) {
+    try { await QRCode.toCanvas(c, c.dataset.link, { width: 160, margin: 1, color: { dark: '#1E1B4B', light: '#ffffff' } }); } catch {}
+  }
+}
+window.__openWorksheet = (id) => { history.pushState(null, '', '?worksheet=' + id); openWorksheet(id); };
+
+// ---------- مشاركة الدروس بين المعلّمين ----------
+async function prepareItemsForRemote(items, lessonId) {
+  // لوحات النص لا تُحفظ في جدول items — حوّلها إلى .glb وارفعها للتخزين أولًا
+  const { textPanelToGlb } = await import('./lib/image-to-glb.js');
+  for (const it of items) {
+    if (it.textPanel && !it.glb_url) {
+      const { blob } = await textPanelToGlb(it.textPanel, { bg: '#4F46E5' });
+      it.glb_url = await uploadToStorage(new File([blob], 'panel.glb', { type: 'model/gltf-binary' }), 'panel.glb', lessonId);
+      it.file_url = it.glb_url;
+    }
+  }
+}
+async function loadSharedLessons() {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.from('lessons').select('id,title,subject,grade,description,views,teacher_id,created_at,brand_name,brand_logo_url').eq('shared', true).order('created_at', { ascending: false }).limit(50);
+    if (error) return [];
+    return data || [];
+  } catch { return []; }
+}
+async function renderShared() {
+  const box = $('sharedGrid'); if (!box) return;
+  const list = await loadSharedLessons();
+  const sess = getSession();
+  box.innerHTML = list.length ? list.map((l) => `
+    <div class="card lib-card">
+      <div class="thumb">🤝</div>
+      <div class="lesson-meta">
+        <h3>${esc(l.title)}</h3>
+        <span class="badge">${esc(l.subject || 'بدون مادة')}</span>
+        <span class="badge">${esc(l.grade || '')}</span>
+        ${l.brand_name ? `<span class="badge orange">🏫 ${esc(l.brand_name)}</span>` : ''}
+        <span class="badge">👁️ ${l.views || 0}</span>
+        <p class="hint">${esc(l.description || '')}</p>
+        <div class="row">
+          <button class="btn btn-primary btn-sm" onclick="window.__viewLibraryLesson('${l.id}')">👀 عرض</button>
+          ${sess ? `<button class="btn btn-orange btn-sm" style="width:auto" onclick="window.__copyShared('${l.id}')">📋 خذ نسخة وعدّل عليها</button>` : ''}
+        </div>
+      </div>
+    </div>`).join('') : '<p class="hint">لا توجد دروس مشتركة بعد — كن أول من يشارك درسًا مع زملائه!</p>';
+}
+window.__toggleShare = async (id) => {
+  const lessons = getLessons(); const lesson = lessons.find((l) => l.id === id); if (!lesson) return;
+  const next = !lesson.shared;
+  if (isRemote()) {
+    const { error } = await supabase.from('lessons').update({ shared: next }).eq('id', id);
+    if (error) { alert('تعذّر تغيير المشاركة: ' + friendlyAuthError(error)); return; }
+  }
+  lesson.shared = next; saveLessons(lessons); renderDashboard();
+};
+window.__copyShared = async (id) => {
+  const src = await fetchPublicLesson(id);
+  if (!src) { alert('الدرس غير موجود'); return; }
+  await copyLessonFrom(src, ' (نسخة من درس مشترك)');
+};
+
+// ---------- تفكيك المجسم (وضع الفصل) ----------
+let explodeFactor = 0;
+async function applyExplode(factor) {
+  const mv = $('mv'); if (!mv || !mv.model) return;
+  explodeFactor = factor;
+  const THREE = await import('three');
+  const model = mv.model;
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    if (!o.userData.darsakOrig) o.userData.darsakOrig = o.position.clone();
+    const ob = new THREE.Box3().setFromObject(o);
+    const oc = ob.getCenter(new THREE.Vector3());
+    const dir = oc.sub(center);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 1, 0);
+    dir.normalize();
+    o.position.copy(o.userData.darsakOrig).addScaledVector(dir, factor);
+  });
+}
+window.__toggleExplode = async () => {
+  const next = explodeFactor > 0 ? 0 : 0.5;
+  await applyExplode(next);
+  const btn = $('explodeBtn');
+  if (btn) btn.textContent = next > 0 ? '🔩 ركّب الأجزاء' : '🧩 فكّك الأجزاء';
+  const rg = $('explodeRange'); if (rg) rg.value = String(Math.round((next / 0.6) * 100));
+};
+window.__explodeRange = (v) => {
+  const f = (Number(v) / 100) * 0.6;
+  applyExplode(f);
+  const btn = $('explodeBtn');
+  if (btn) btn.textContent = Number(v) > 0 ? '🔩 ركّب الأجزاء' : '🧩 فكّك الأجزاء';
+};
+
+// ---------- صوّر نفسك مع الدرس ----------
+let photoStream = null;
+async function openPhotoMode() {
+  const modal = $('photoModal'); if (!modal) return;
+  modal.classList.remove('hidden');
+  try {
+    photoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    const v = $('photoVideo'); v.srcObject = photoStream; await v.play();
+  } catch (e) { alert('تعذّر فتح الكاميرا — تأكد من السماح بالكاميرا ومن فتح الموقع عبر HTTPS.'); closePhotoMode(); }
+}
+function closePhotoMode() {
+  const modal = $('photoModal'); if (modal) modal.classList.add('hidden');
+  if (photoStream) { photoStream.getTracks().forEach((t) => t.stop()); photoStream = null; }
+}
+async function capturePhoto() {
+  const v = $('photoVideo'); const c = $('photoCanvas');
+  if (!v || !v.videoWidth) { alert('الكاميرا لم تجهز بعد — انتظر ثانية وحاول مجددًا.'); return; }
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(v, 0, 0, c.width, c.height);
+  const barH = Math.round(c.height * 0.14);
+  ctx.fillStyle = '#1E1B4B'; ctx.fillRect(0, c.height - barH, c.width, barH);
+  ctx.fillStyle = '#fff'; ctx.font = `900 ${Math.round(barH * 0.42)}px Cairo, sans-serif`; ctx.textAlign = 'center';
+  const brand = studentLesson?.brand_name ? `🏫 ${studentLesson.brand_name} • ` : '';
+  ctx.fillText(`${brand}${studentLesson?.title || 'درسك AR'}`, c.width / 2, c.height - barH * 0.36);
+  ctx.font = `700 ${Math.round(barH * 0.28)}px Cairo, sans-serif`; ctx.fillStyle = '#A5B4FC';
+  ctx.fillText('درسك AR — الدرس قدامك.. على الحيطة • www.drsak.online', c.width / 2, c.height - barH * 0.08);
+  c.classList.remove('hidden');
+  const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  const dl = $('photoDownload'); dl.href = url; dl.download = 'darsak-photo.png'; dl.classList.remove('hidden');
+  const sh = $('photoShare');
+  if (navigator.canShare) {
+    const file = new File([blob], 'darsak-photo.png', { type: 'image/png' });
+    if (navigator.canShare({ files: [file] })) {
+      sh.classList.remove('hidden');
+      sh.onclick = () => navigator.share({ files: [file], title: 'درسك AR', text: `صورة مع درس «${studentLesson?.title || ''}»` }).catch(() => {});
+    }
+  }
+}
+window.__openPhotoMode = openPhotoMode;
+window.__closePhotoMode = closePhotoMode;
+window.__capturePhoto = capturePhoto;
+
+// ---------- نقاط وشارات ولوحة شرف ----------
+const POINTS_PER_CORRECT = 5, POINTS_PER_FINISH = 10;
+function pointsForRow(r) { return (r.quiz_score || 0) * POINTS_PER_CORRECT + POINTS_PER_FINISH; }
+const BADGES = [
+  { id: 'first', icon: '🌱', title: 'أول درس', test: (s) => s.lessons >= 1 },
+  { id: 'explorer', icon: '🧭', title: 'مستكشف', test: (s) => s.lessons >= 3 },
+  { id: 'perfect', icon: '💯', title: 'علامة كاملة', test: (s) => s.perfect },
+  { id: 'star50', icon: '⭐', title: '50 نقطة', test: (s) => s.points >= 50 },
+  { id: 'star100', icon: '🏆', title: 'بطل الفصل', test: (s) => s.points >= 100 },
+];
+function studentStats(rows) {
+  const lessons = new Set(rows.map((r) => r.lesson_id)).size;
+  const points = rows.reduce((a, r) => a + pointsForRow(r), 0);
+  const perfect = rows.some((r) => r.quiz_total > 0 && r.quiz_score === r.quiz_total);
+  const correct = rows.reduce((a, r) => a + (r.quiz_score || 0), 0);
+  return { lessons, points, perfect, correct, rows: rows.length };
+}
+function badgesFor(rows) { const s = studentStats(rows); return BADGES.filter((b) => b.test(s)); }
+function myActivityRows() {
+  const name = studentName();
+  if (!name) return [];
+  return loadLocal(LS_ACTIVITY, []).filter((r) => r.student_name === name);
+}
 
 /* ================= صفحة الطباعة ================= */
 async function openPrint(id) {
@@ -1119,6 +1443,7 @@ async function openPrint(id) {
   sheet.innerHTML = `
     <img class="logo" src="/public/darsak-ar-icon.png" alt="درسك AR">
     <h1>درسك <span style="font-family:'Space Grotesk';background:#EA580C;color:#fff;border-radius:999px;padding:2px 10px">AR</span></h1>
+    ${lesson.brand_name || lesson.brand_logo_url ? `<div style="margin:6px 0 2px">${lesson.brand_logo_url ? `<img src="${esc(lesson.brand_logo_url)}" alt="" style="width:72px;height:72px;border-radius:16px;object-fit:cover;vertical-align:middle"> ` : ''}<b style="font-size:22px">${esc(lesson.brand_name || '')}</b></div>` : ''}
     <h2>${esc(lesson.title)}</h2>
     <p>${esc(lesson.subject || '')} • ${esc(lesson.grade || '')}</p>
     <div class="qr-print"><canvas id="printQr" width="520" height="520" style="width:100%"></canvas></div>
@@ -1131,6 +1456,7 @@ async function openPrint(id) {
     </div>
     <p class="hint">${esc(link)}</p>`;
   try { await QRCode.toCanvas($('printQr'), link, { width: 520, margin: 2, color: { dark: '#1E1B4B', light: '#ffffff' } }); } catch {}
+  try { await drawQrLogo($('printQr'), lesson.brand_logo_url || '/public/darsak-ar-icon.png', 90); } catch {}
 }
 
 /* ================= إنشاء درس ================= */
@@ -1138,13 +1464,28 @@ async function createLesson() {
   const title = $('newTitle').value.trim();
   if (!title) return showMsg($('dashMsg'), 'عنوان الدرس مطلوب');
   const sess = getSession();
-  const lesson = { id: uid('les'), teacher_id: isRemote() ? sess.id : (sess?.email || 'local'), title, subject: $('newSubject').value.trim(), grade: $('newGrade').value.trim(), description: $('newDesc').value.trim(), views: 0, created_at: new Date().toISOString(), items: [] };
+  const lesson = { id: uid('les'), teacher_id: isRemote() ? sess.id : (sess?.email || 'local'), title, subject: $('newSubject').value.trim(), grade: $('newGrade').value.trim(), description: $('newDesc').value.trim(), views: 0, created_at: new Date().toISOString(), items: [], brand_name: sess?.brand_name || '', brand_logo_url: sess?.brand_logo_url || '' };
+  const templateId = $('newTemplate')?.value || 'blank';
+  if (templateId !== 'blank') {
+    try {
+      const { TEMPLATES } = await import('./lib/curriculum.js');
+      const tpl = TEMPLATES.find((t) => t.id === templateId);
+      if (tpl) lesson.items = tpl.items.map((it) => ({ ...it, id: uid('itm') }));
+    } catch (e) { console.warn('template load failed', e); }
+  }
   if (isRemote()) {
     const { error } = await supabase.from('lessons').insert({
       id: lesson.id, teacher_id: sess.id, title: lesson.title,
       subject: lesson.subject, grade: lesson.grade, description: lesson.description,
+      brand_name: lesson.brand_name, brand_logo_url: lesson.brand_logo_url,
     });
     if (error) { showMsg($('dashMsg'), 'تعذّر إنشاء الدرس: ' + friendlyAuthError(error)); return; }
+    if (lesson.items.length) {
+      try { await prepareItemsForRemote(lesson.items, lesson.id); }
+      catch (e) { showMsg($('dashMsg'), 'تعذّر تجهيز عناصر القالب: ' + e.message); return; }
+      const { error: e2 } = await supabase.from('items').insert(lesson.items.map((it, i) => itemRow(it, lesson.id, i)));
+      if (e2) { showMsg($('dashMsg'), 'تعذّر حفظ عناصر القالب: ' + friendlyAuthError(e2)); return; }
+    }
   }
   const lessons = getLessons(); lessons.unshift(lesson); saveLessons(lessons);
   $('newTitle').value = ''; $('newSubject').value = ''; $('newGrade').value = ''; $('newDesc').value = '';
@@ -1158,6 +1499,7 @@ function route() {
   if (q.get('lesson')) return openStudent(q.get('lesson'));
   if (q.get('print')) return openPrint(q.get('print'));
   if (q.get('library')) return openLibrary();
+  if (q.get('worksheet')) return openWorksheet(q.get('worksheet'));
   if (getSession()) return renderDashboard();
   showView('view-home');
   recordVisit('/'); // زيارة الصفحة الرئيسية (صف واحد لكل زائر/يوم)
@@ -1179,6 +1521,9 @@ async function init() {
   if (!session) {
     const s = loadLocal(LS_SESSION, null);
     if (s) { session = { ...s, mode: 'local' }; lessonsCache = null; }
+  }
+  if (session?.mode === 'local') {
+    try { const b = JSON.parse(localStorage.getItem('darsak.brand.v1') || 'null'); if (b) { session.brand_name = b.name || ''; session.brand_logo_url = b.logo || ''; } } catch {}
   }
   if (!isRemote()) seedDemoIfNeeded();
   initAuth();
@@ -1211,12 +1556,23 @@ async function init() {
   $('nextItemBtn').onclick = () => navStudent(1);
   $('joinLiveBtn').onclick = joinLive;
   $('finishLessonBtn').onclick = window.__finishLesson;
+  $('saveBrandBtn').onclick = saveBrand;
+  $('worksheetBtn').onclick = () => window.__openWorksheet(currentLessonId);
+  $('doWorksheetPrintBtn').onclick = () => window.print();
+  $('backFromWorksheet').onclick = () => {
+    if (document.referrer && document.referrer.includes(location.host)) history.back();
+    else { history.pushState(null, '', location.pathname); showView('view-home'); }
+  };
+  $('photoBtn').onclick = openPhotoMode;
+  $('closePhotoBtn').onclick = closePhotoMode;
+  $('capturePhotoBtn').onclick = capturePhoto;
+  $('downloadOfflineBtn').onclick = downloadLessonOffline;
   $('ctaLibrary').onclick = () => { history.pushState(null, '', '?library=1'); openLibrary(); };
   $('dashLibraryBtn').onclick = () => { history.pushState(null, '', '?library=1'); openLibrary(); };
   window.addEventListener('pagehide', () => { if (studentLesson && !activitySaved) saveActivity(); });
   $('ctaTeacher').onclick = () => { getSession() ? renderDashboard() : showView('view-auth'); };
   $('ctaDemo').onclick = () => { history.pushState(null, '', '?lesson=les_demo_solar'); openStudent('les_demo_solar'); };
-  $('navHomeBtn').onclick = () => { history.pushState(null, '', location.pathname); showView('view-home'); };
+  $('navHomeBtn').onclick = () => { history.pushState(null, '', location.pathname); showView('view-home'); renderOfflineList(); };
   $('navDashBtn').onclick = renderDashboard;
   $('navAdminBtn').onclick = () => { renderDashboard().then(() => { const el = $('adminSection'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }); };
   $('navLogoutBtn').onclick = async () => {
@@ -1224,5 +1580,6 @@ async function init() {
     setSession(null); lessonsCache = null; showView('view-home');
   };
   route();
+  renderOfflineList();
 }
 init();

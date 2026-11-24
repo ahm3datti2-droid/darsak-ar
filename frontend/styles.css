@@ -179,3 +179,19 @@ footer{background:var(--navy);color:var(--light-indigo);text-align:center;paddin
 /* نتيجة إنهاء الدرس (لوحة داخل الصفحة بدل نافذة التنبيه) */
 .finish-result{background:#DCFCE7;border:2px solid var(--green);border-radius:14px;padding:18px;margin:14px 0}
 .finish-result h3{font-size:20px;color:var(--green)}
+
+/* ورقة الشغل — أسئلة + QR لكل سؤال */
+.ws-meta{font-size:16px;margin:10px 0 18px}
+.ws-q{border:2px solid var(--line);border-radius:14px;padding:14px;margin:14px 0;text-align:right}
+.ws-q h3{font-size:19px;margin-bottom:6px}
+.ws-choices p{margin:4px 0}
+.ws-qr{display:block;margin:10px auto}
+.ws-notes{margin:18px 0}
+.ws-notes p{margin:8px 0;color:var(--muted)}
+
+/* نافذة الصورة التذكارية */
+.modal{position:fixed;inset:0;background:rgba(10,10,30,.65);display:flex;align-items:center;justify-content:center;z-index:90;padding:16px}
+.modal-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;max-width:560px;width:100%;max-height:90vh;overflow:auto}
+
+/* شارة البراندنج في بطاقات المكتبة */
+.badge.orange{background:#FFF7ED;color:#EA580C;border-color:#FDBA74}

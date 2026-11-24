@@ -83,6 +83,11 @@
       <p>1️⃣ سجّل كمعلّم &nbsp; 2️⃣ أنشئ درسًا وأضف عناصره &nbsp; 3️⃣ اطبع الـ QR والصقه في الفصل &nbsp; 4️⃣ الطالب يمسح ويعرض الدرس على الحيطة أو الأرض.</p>
       <p class="hint">يعمل على أندرويد (Chrome + ARCore) وآيفون (Safari + Quick Look). مجاني بالكامل — بدون تثبيت تطبيق وبدون أي مصاريف.</p>
     </div>
+    <div id="offlineSection" class="hidden">
+      <h2>📴 دروسي دون نت</h2>
+      <p class="hint">الدروس التي نزّلتها تعمل دون اتصال بالإنترنت — افتحها في أي حتة.</p>
+      <div id="offlineList"></div>
+    </div>
   </section>
 
   <!-- ===== تسجيل المعلّم ===== -->
@@ -112,10 +117,21 @@
         <div><label for="newSubject">المادة</label><input id="newSubject" placeholder="مثال: علوم"></div>
         <div><label for="newGrade">الصف</label><input id="newGrade" placeholder="مثال: الصف الرابع"></div>
         <div><label for="newDesc">وصف قصير</label><input id="newDesc" placeholder="وصف مختصر للدرس"></div>
+        <div><label for="newTemplate">قالب جاهز (اختياري)</label><select id="newTemplate"><option value="blank">درس فارغ (عادي)</option><option value="parts">🧩 قالب: درس أجزاء</option><option value="stages">🔄 قالب: درس مراحل</option><option value="compare">⚖️ قالب: درس مقارنة</option></select></div>
       </div>
       <div class="row"><button class="btn btn-orange" id="createLessonBtn" type="button">➕ إنشاء درس جديد</button></div>
       <div class="row"><button class="btn btn-primary" id="dashLibraryBtn" type="button">📚 مكتبة المنهج المصري — دروس جاهزة</button></div>
       <div id="dashMsg"></div>
+    </div>
+    <div class="card">
+      <h2>🏫 براندنج المدرس <span class="badge orange">⭐ ميزة مميزة</span></h2>
+      <p class="hint">اسم السنتر وشعاره يظهران للطلاب في صفحة الدرس وفي الـ QR وورقة الشغل.</p>
+      <div class="grid2">
+        <div><label for="brandName">اسم السنتر / اسمك كمدرّس</label><input id="brandName" placeholder="مثال: سنتر النور — أ. أحمد"></div>
+        <div><label for="brandLogo">شعار السنتر (صورة)</label><input id="brandLogo" type="file" accept="image/*"><div id="brandPreview" style="margin-top:8px"></div></div>
+      </div>
+      <div class="row"><button class="btn btn-primary" id="saveBrandBtn" type="button">💾 حفظ البراندنج</button></div>
+      <div id="brandMsg"></div>
     </div>
     <h2 id="lessonsHeading">دروسي</h2>
     <div id="lessonsList"></div>
@@ -162,6 +178,7 @@
           <button class="btn btn-primary" id="downloadQrBtn" type="button">⬇️ تحميل QR كصورة PNG</button>
           <button class="btn btn-primary" id="shareWaBtn" type="button" style="background:#25D366">💬 مشاركة واتساب</button>
           <button class="btn btn-ghost" id="printBtn" type="button">🖨️ صفحة الطباعة</button>
+          <button class="btn btn-ghost" id="worksheetBtn" type="button">📄 ورقة شغل</button>
         </div>
       </div>
       <!-- إضافة عنصر -->
@@ -216,6 +233,7 @@
       <img class="logo-img" src="/public/darsak-ar-icon.png" alt="درسك AR" style="width:56px;height:56px">
       <h1 id="studentTitle"></h1>
       <p id="studentMeta"></p>
+      <div id="studentBrand" style="margin-top:8px"></div>
     </div>
     <div class="onboarding">📷 <b>وجّه الكاميرا على حيطة أو أرض فاضية وحرّك الموبايل ببطء</b> — ثم اضغط الزر البرتقالي لعرض الدرس بالواقع المعزّز.</div>
     <div id="studentNameBar" class="name-bar"></div>
@@ -224,6 +242,10 @@
       <button class="btn btn-ghost btn-sm" id="joinLiveBtn" type="button">🎛️ انضم لحصة مباشرة</button>
       <input id="liveCodeInput" placeholder="كود الحصة (4 أرقام)" inputmode="numeric" maxlength="4" style="max-width:180px" dir="ltr">
       <button class="btn btn-orange btn-sm" id="finishLessonBtn" type="button" style="width:auto">🏁 إنهاء الدرس وعرض نتيجتي</button>
+    </div>
+    <div class="row" style="margin:8px 0">
+      <button class="btn btn-ghost btn-sm" id="downloadOfflineBtn" type="button">⬇️ نزّل الدرس دون نت</button>
+      <button class="btn btn-ghost btn-sm" id="photoBtn" type="button">📸 صوّر نفسك مع الدرس</button>
     </div>
     <div id="studentItems"></div>
     <div class="swipe-nav">
@@ -248,6 +270,20 @@
       <p class="hint" id="libraryCount"></p>
     </div>
     <div id="libraryGrid"></div>
+    <h2 style="margin-top:28px">🤝 دروس مشتركة من معلمين</h2>
+    <p class="hint">دروس شاركها معلمون آخرون — خذ نسخة وعدّل عليها لتناسب طلابك.</p>
+    <div id="sharedGrid"></div>
+  </section>
+
+  <!-- ===== ورقة شغل AR ===== -->
+  <section id="view-worksheet" class="hidden">
+    <div class="print-sheet" id="worksheetSheet" style="display:block"></div>
+    <div class="card no-print" style="text-align:center">
+      <h2>📄 ورقة شغل AR</h2>
+      <p>اطبع الورقة — جنب كل سؤال رمز QR يفتح المجسم على الموبايل.</p>
+      <button class="btn btn-orange" id="doWorksheetPrintBtn" type="button">🖨️ اطبع الآن / احفظ PDF</button>
+      <button class="btn btn-ghost" id="backFromWorksheet" type="button">رجوع</button>
+    </div>
   </section>
 
   <!-- ===== صفحة الطباعة ===== -->
@@ -260,6 +296,21 @@
       <button class="btn btn-ghost" id="backFromPrint" type="button">رجوع</button>
     </div>
   </section>
+  <!-- ===== نافذة الصورة التذكارية ===== -->
+  <div id="photoModal" class="modal hidden">
+    <div class="modal-card">
+      <h2>📸 صوّر نفسك مع الدرس</h2>
+      <p class="hint">وجّه الكاميرا لنفسك واضغط «التقط الصورة» — ستظهر بإطار الدرس، ويمكنك تحميلها أو مشاركتها.</p>
+      <video id="photoVideo" autoplay playsinline style="width:100%;border-radius:12px;background:#000"></video>
+      <canvas id="photoCanvas" class="hidden" style="width:100%;border-radius:12px;margin-top:10px"></canvas>
+      <div class="row">
+        <button class="btn btn-orange" id="capturePhotoBtn" type="button">📷 التقط الصورة</button>
+        <a class="btn btn-primary hidden" id="photoDownload" style="text-decoration:none">⬇️ تحميل الصورة</a>
+        <button class="btn btn-ghost hidden" id="photoShare" type="button">💬 مشاركة</button>
+        <button class="btn btn-ghost" id="closePhotoBtn" type="button">إغلاق</button>
+      </div>
+    </div>
+  </div>
 </main>
 
 <footer>
