@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://www.drsak.online/sitemap.xml
