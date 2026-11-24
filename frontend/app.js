@@ -262,7 +262,7 @@ function initAuth() {
           if (error) throw new Error(friendlyAuthError(error));
           if (data.user) {
             // صف المعلّم في جدول teachers (يتجاهل الفشل إن كان موجودًا)
-            await supabase.from('teachers').insert({ id: data.user.id, email, name: name || email.split('@')[0] });
+            await supabase.from('teachers').insert({ id: data.user.id, email, name: name || 'معلّم' });
           }
           if (data.session?.user) {
             await applySupabaseUser(data.session.user);
@@ -294,9 +294,9 @@ function initAuth() {
         const teachers = loadLocal(LS_TEACHERS, [{ email: 'demo@darsak.ar', password_hash: await sha256('123456'), name: 'معلّم تجريبي' }]);
         if (authMode === 'signup') {
           if (teachers.some((t) => t.email === email)) throw new Error('هذا البريد مسجّل من قبل — جرّب تسجيل الدخول');
-          teachers.push({ email, password_hash: await sha256(pass), name: name || email.split('@')[0] });
+          teachers.push({ email, password_hash: await sha256(pass), name: name || 'معلّم' });
           saveLocal(LS_TEACHERS, teachers);
-          setSession({ email, name: name || email.split('@')[0], is_admin: false, mode: 'local' });
+          setSession({ email, name: name || 'معلّم', is_admin: false, mode: 'local' });
         } else {
           const ok = await tryLocalLogin(email, pass);
           if (!ok) throw new Error('البريد أو كلمة السر غير صحيحة');
@@ -310,10 +310,12 @@ function initAuth() {
 }
 
 /* ================= لوحة المعلّم ================= */
+// الاسم المعروض: إن كان فارغًا أو مجرد أول الإيميل (مثل ahm3d.atti2) نعرض «معلّم»
+const displayName = (s) => (s?.name && s.name !== s.email?.split('@')[0] ? s.name : 'معلّم');
 async function renderDashboard() {
   const sess = getSession();
   if (!sess) { showView('view-auth'); return; }
-  $('teacherName').textContent = sess.name || sess.email;
+  $('teacherName').textContent = displayName(sess);
   $('lessonsHeading').textContent = isAdmin() ? 'كل الدروس — عرض الأدمن' : 'دروسي';
   showView('view-dashboard');
   let lessons;
