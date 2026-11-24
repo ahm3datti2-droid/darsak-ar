@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تشخيص درسك AR (مؤقت)</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+<style>body{font-family:sans-serif;padding:16px}pre{background:#f3f4f6;padding:12px;white-space:pre-wrap}button{padding:10px 16px;margin:6px 0;font-size:16px}</style>
+</head>
+<body>
+<h1>تشخيص درسك AR (صفحة مؤقتة للحذف بعد التشخيص)</h1>
+<h2>أ) تحويل اللوحات النصية إلى GLB</h2>
+<button id="runPanels" type="button">تشغيل اختبار اللوحات</button>
+<pre id="panelOut">لم يُشغَّل بعد</pre>
+<h2>ب) التفكيك (رائد الفضاء)</h2>
+<model-viewer id="mv" src="https://modelviewer.dev/shared-assets/models/Astronaut.glb" camera-controls auto-rotate style="width:100%;height:320px"></model-viewer>
+<button id="runExplode" type="button">تشغيل اختبار التفكيك</button>
+<pre id="explodeOut">لم يُشغَّل بعد</pre>
+<script type="module">
+import { textPanelToGlb } from './lib/image-to-glb.js';
+const out = (id, s) => { document.getElementById(id).textContent = s; };
+document.getElementById('runPanels').onclick = async () => {
+  const texts = ['1- البيضة 🥚', '2- اليرقة 🐛', '3- الشرنقة', '4- الفراشة 🦋', 'المجموعة الشمسية ☀️'];
+  let log = '';
+  for (const t of texts) {
+    try {
+      const r = await textPanelToGlb(t, { bg: '#4F46E5' });
+      log += `PASS: ${t} -> glb ${r.blob.size} bytes, aspect ${r.aspect}\n`;
+    } catch (e) {
+      log += `FAIL: ${t} -> ${e.message}\n`;
+    }
+  }
+  out('panelOut', log);
+};
+document.getElementById('runExplode').onclick = async () => {
+  const mv = document.getElementById('mv');
+  let log = `mv exists: ${!!mv}\nmodel exists: ${!!mv.model}\n`;
+  if (!mv || !mv.model) { out('explodeOut', log + 'MODEL NOT LOADED'); return; }
+  const model = mv.model;
+  const V3 = model.position.constructor;
+  let meshes = 0;
+  model.traverse((o) => { if (o.isMesh) meshes++; });
+  log += `meshes: ${meshes}\n`;
+  let first = null;
+  model.traverse((o) => { if (!first && o.isMesh) first = o; });
+  const before = first ? first.position.clone() : null;
+  log += `first mesh pos before: ${before ? before.toArray().map((v) => v.toFixed(3)).join(', ') : 'none'}\n`;
+  try {
+    model.updateWorldMatrix(true, true);
+    const center = new V3();
+    let n = 0;
+    model.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return;
+      o.geometry.computeBoundingBox();
+      const c = o.geometry.boundingBox.getCenter(new V3());
+      c.applyMatrix4(o.matrixWorld);
+      center.add(c); n++;
+    });
+    center.divideScalar(n);
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      if (!o.userData.darsakOrig) o.userData.darsakOrig = o.position.clone();
+      o.geometry.computeBoundingBox();
+      const c = o.geometry.boundingBox.getCenter(new V3());
+      c.applyMatrix4(o.matrixWorld);
+      const dirW = c.sub(center);
+      if (dirW.lengthSq() < 1e-6) dirW.set(0, 1, 0);
+      dirW.normalize();
+      const parent = o.parent || model;
+      const dirL = dirW.clone().transformDirection(parent.matrixWorld.clone().invert());
+      o.position.copy(o.userData.darsakOrig).addScaledVector(dirL, 0.5);
+    });
+    const after = first.position.clone();
+    log += `first mesh pos after: ${after.toArray().map((v) => v.toFixed(3)).join(', ')}\n`;
+    log += `moved: ${after.distanceTo(before).toFixed(3)} m\n`;
+    log += after.distanceTo(before) > 0.01 ? 'EXPLODE PASS: meshes moved\n' : 'EXPLODE FAIL: meshes did not move\n';
+  } catch (e) {
+    log += `EXPLODE THREW: ${e.message}\n${e.stack || ''}\n`;
+  }
+  out('explodeOut', log);
+};
+</script>
+</body>
+</html>
