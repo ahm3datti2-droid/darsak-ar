@@ -113,6 +113,36 @@ darsak-ar/
 - **الزيارات:** حسب المصدر (النطاق الذي جاء منه الزائر — جوجل/فيسبوك/واتساب/مباشر…) وحسب اليوم لآخر 7 أيام — من جدول `site_visits` (صف واحد لكل زائر/مسار/يوم، يُسجَّل تلقائيًا عند فتح الصفحة الرئيسية أو أي درس).
 - **تحكم كامل:** الأدمن يرى كل الدروس (وليس دروسه فقط) مع تحرير وحذف أي درس وأي عنصر داخل أي درس.
 
+## الإطلاق: SEO والأمان — الدومين الموحّد www + هيدرز الأمان + CSP
+
+كل الروابط العامة تشير إلى **https://www.drsak.online/** فقط (الدومين الأساسي)، وأي طلب على `drsak.online` أو `darsak-ar.vercel.app` يُحوَّل إليه (301).
+
+### 1) صورة المعاينة (Open Graph)
+- الملف: `frontend/public/og-image.png` — ‏**1200×630** (القياس المطلوب لفيسبوك/واتساب).
+- تُبنى بالسكربت المحلي (PIL + خط Noto Sans Arabic + شعار الموقع) — ليست مولّدة بالذكاء الاصطناعي حتى يكون النص العربي سليمًا.
+- تُستخدم في وسوم `og:image` و`twitter:image` داخل `<head>` في `index.html` مع `og:image:width/height`.
+
+### 2) الـ canonical ووسوم Open Graph
+- في `<head>` في `frontend/index.html`: `rel="canonical"` + `og:type/site_name/title/description/url/image/locale (ar_EG)` + `twitter:card (summary_large_image)` — كلها تشير إلى `https://www.drsak.online/`.
+- `frontend/sitemap.xml` فيه **رابط واحد فقط**: `https://www.drsak.online/` (الروابط القديمة `drsak.online` و`darsak-ar.vercel.app` حُذفت منه لأنها تُحوَّل أصلًا).
+
+### 3) إعدادات Domains في Vercel
+- من لوحة Vercel ← المشروع `darsak-ar` ← **Settings ← Domains**: اجعل `www.drsak.online` هو **Primary Domain**، وتأكد أن `drsak.online` يحوّل إلى `www` (يظهر كـ Redirect).
+- التحويل مضمون أيضًا بالكود (انظر الخطوة 4) حتى لو تغيّر إعداد اللوحة.
+
+### 4) `vercel.json` — الهيدرز الأمنية + التحويلات (وضع تجريبي أولًا)
+- الملف في `frontend/vercel.json` (لأن Root Directory هو `frontend`) ويحتوي:
+  - **redirects** (301) حسب الـ host: `drsak.online` → `www.drsak.online`، و`darsak-ar.vercel.app` → `www.drsak.online`.
+  - **headers**: `Strict-Transport-Security` + `X-Content-Type-Options: nosniff` + `X-Frame-Options: DENY` + `Referrer-Policy` + `Permissions-Policy` (`camera=(self)` لأن الـ AR يحتاج الكاميرا).
+  - **CSP في وضع تجريبي** (`Content-Security-Policy-Report-Only`): يسجّل المخالفات في الـ Console **دون أن يحجب أي شيء**، حتى لا يكسر الموقع.
+- **لماذا `unsafe-inline` في `script-src` و`style-src`؟** التطبيق يستخدم `onclick="..."` داخل القوالب المولّدة ديناميكيًا + سكربت تسجيل الـ Service Worker مضمّن في الصفحة + `style="..."` في أماكن كثيرة — إزالتها تتطلب إعادة كتابة كبيرة. الـ CSP ما زال يحمي من: تحميل سكربتات من مصادر غير مصرّح بها، والتضمين في iframes (`frame-ancestors 'none'`)، والبلاجنز (`object-src 'none'`)، وتغيير الـ base.
+
+### 5) التفعيل بعد التجربة
+1. ادفع `vercel.json` (التجريبي) وجرّب الموقع كاملًا: الصفحة الرئيسية، تسجيل الدخول، إنشاء درس، الـ QR، عرض الطالب، الطباعة — وافتح **Console** وابحث عن أي سطر `Content-Security-Policy` (مخالفة).
+2. إن لم تظهر مخالفات: استبدل محتوى `frontend/vercel.json` بمحتوى `frontend/vercel.enforce.json` (نفس الملف تمامًا لكن الهيدر `Content-Security-Policy` بدل `Content-Security-Policy-Report-Only`) وادفع من جديد.
+3. تحقق من الهيدرز الحيّة: `curl -sI https://www.drsak.online/ | grep -i "content-security-policy\|strict-transport"`.
+4. ⚠️ **ارفع رقم `CACHE` في `sw.js` مع كل تغيير** — وإلا يبقى المتصفح يعرض النسخة القديمة.
+
 ## التطوير محليًا
 ```bash
 # جرّب الواجهة فقط (بدون خادم):
