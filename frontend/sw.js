@@ -1,7 +1,7 @@
 /* درسك AR — Service Worker: cache-first للواجهة، وطلبات Supabase شبكة فقط (لا كاش)
    مهم: عند أي تغيير في ملفات الواجهة ارفع رقم CACHE (v2, v3...) حتى يحذف
    المتصفح النسخة القديمة — وإلا يبقى يخدم نسخة قديمة من الكاش إلى الأبد. */
-const CACHE = 'darsak-ar-v3';
+const CACHE = 'darsak-ar-v4';
 const SHELL = [
   '/', '/index.html', '/styles.css', '/app.js', '/supabase-config.js',
   '/lib/image-to-glb.js', '/lib/qrcode-generator.min.js', '/manifest.webmanifest',
