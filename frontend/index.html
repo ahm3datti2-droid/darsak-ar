@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>درسك AR — الدرس قدامك.. على الحيطة</title>
+<meta name="description" content="حوّل صور الدروس ونماذج 3D إلى واقع معزّز يفتحه الطالب بمسح QR — بدون تثبيت تطبيق.">
+<meta name="theme-color" content="#1E1B4B">
+<link rel="icon" type="image/png" href="/public/favicon.png">
+<link rel="apple-touch-icon" href="/public/darsak-ar-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<!-- model-viewer: عارض 3D + AR من Google (مجاني ومفتوح المصدر) -->
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+<!-- qrcode: توليد QR مجاني -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<!-- three.js + GLTFExporter لتحويل الصورة إلى .glb -->
+<script type="importmap">
+{"imports":{
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script>
+  // يضبطه النشر: رابط الـ Worker. اتركه فارغًا للوضع المحلي (localStorage).
+  window.DARSAK_API = window.DARSAK_API || "";
+</script>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <img class="logo-img" src="/public/darsak-ar-icon.png" alt="شعار درسك AR">
+    <div>
+      <div class="logo-name">درسك<span class="ar-badge">AR</span></div>
+      <p class="tagline">الدرس قدامك.. على الحيطة</p>
+    </div>
+    <div class="header-spacer"></div>
+    <div class="header-actions">
+      <button class="btn btn-light" id="navHomeBtn" type="button">🏠 الرئيسية</button>
+      <button class="btn btn-light hidden" id="navDashBtn" type="button">لوحتي</button>
+      <button class="btn btn-light hidden" id="navLogoutBtn" type="button">خروج</button>
+    </div>
+  </div>
+</header>
+
+<main id="app" class="container">
+  <!-- ===== الصفحة الرئيسية ===== -->
+  <section id="view-home">
+    <div class="hero" style="margin:0 -16px;padding:44px 16px 56px;border-radius:0 0 24px 24px">
+      <img class="hero-logo" src="/public/darsak-ar-icon.png" alt="درسك AR">
+      <h1>درسك <span class="ar-badge">AR</span></h1>
+      <p>الدرس قدامك.. على الحيطة — حوّل أي صورة أو نموذج 3D إلى تجربة واقع معزّز، والطالب يفتحها بمسح QR بدون تثبيت أي تطبيق.</p>
+      <div class="btn-row">
+        <button class="btn btn-orange" id="ctaTeacher" type="button" style="width:auto">👩‍🏫 ابدأ كمعلّم — مجانًا</button>
+        <button class="btn btn-ghost" id="ctaDemo" type="button">🪐 جرّب الدرس التجريبي</button>
+      </div>
+    </div>
+    <div class="features">
+      <div class="feature"><div class="ico">🖼️</div><h3>صورة → لوحة 3D</h3><p>ارفع صورة الدرس، تتحوّل تلقائيًا في متصفحك إلى لوحة .glb تظهر على الحيطة بنسبة أبعادها الأصلية.</p></div>
+      <div class="feature"><div class="ico">🧊</div><h3>نماذج 3D جاهزة</h3><p>ارفع ملف .glb أو .gltf، واختر عرضه على الأرض أو الحيطة وبحجم صغير أو متوسط أو كبير.</p></div>
+      <div class="feature"><div class="ico">📱</div><h3>QR بدون تطبيق</h3><p>كل درس له رابط وQR بشعارك — الطالب يمسح ويعرض الدرس بالكاميرا مباشرة من المتصفح.</p></div>
+    </div>
+    <div class="card" style="text-align:center">
+      <h2>كيف يعمل؟</h2>
+      <p>1️⃣ سجّل كمعلّم &nbsp; 2️⃣ أنشئ درسًا وأضف عناصره &nbsp; 3️⃣ اطبع الـ QR والصقه في الفصل &nbsp; 4️⃣ الطالب يمسح ويعرض الدرس على الحيطة أو الأرض.</p>
+      <p class="hint">يعمل على أندرويد (Chrome + ARCore) وآيفون (Safari + Quick Look). مجاني بالكامل — Cloudflare Pages + Workers + D1 + R2.</p>
+    </div>
+  </section>
+
+  <!-- ===== تسجيل المعلّم ===== -->
+  <section id="view-auth" class="hidden">
+    <div class="card" style="max-width:480px;margin:24px auto">
+      <h2 id="authTitle">تسجيل الدخول — المعلّم</h2>
+      <p class="hint">الطالب لا يحتاج حسابًا — يفتح الدرس بالـ QR فقط.</p>
+      <div id="authMsg"></div>
+      <label for="authName">الاسم (عند إنشاء حساب جديد)</label>
+      <input id="authName" type="text" placeholder="مثال: أ. أحمد">
+      <label for="authEmail">البريد الإلكتروني</label>
+      <input id="authEmail" type="email" placeholder="name@example.com" dir="ltr">
+      <label for="authPass">كلمة السر (6 أحرف على الأقل)</label>
+      <input id="authPass" type="password" placeholder="••••••" dir="ltr">
+      <div class="row"><button class="btn btn-primary" id="authSubmit" type="button">دخول</button></div>
+      <p style="text-align:center;margin-top:14px"><a href="#" id="authToggle">ليس لديك حساب؟ أنشئ حسابًا مجانيًا</a></p>
+      <p class="hint" style="text-align:center">حساب تجريبي: <b dir="ltr">demo@darsak.ar</b> / <b dir="ltr">123456</b></p>
+    </div>
+  </section>
+
+  <!-- ===== لوحة المعلّم ===== -->
+  <section id="view-dashboard" class="hidden">
+    <div class="card">
+      <h2>👋 أهلًا <span id="teacherName"></span></h2>
+      <p class="hint">أنشئ درسًا جديدًا، ثم أضف عناصره واطبع الـ QR.</p>
+      <div class="grid2">
+        <div><label for="newTitle">عنوان الدرس *</label><input id="newTitle" placeholder="مثال: المجموعة الشمسية"></div>
+        <div><label for="newSubject">المادة</label><input id="newSubject" placeholder="مثال: علوم"></div>
+        <div><label for="newGrade">الصف</label><input id="newGrade" placeholder="مثال: الصف الرابع"></div>
+        <div><label for="newDesc">وصف قصير</label><input id="newDesc" placeholder="وصف مختصر للدرس"></div>
+      </div>
+      <div class="row"><button class="btn btn-orange" id="createLessonBtn" type="button">➕ إنشاء درس جديد</button></div>
+      <div id="dashMsg"></div>
+    </div>
+    <h2>دروسي</h2>
+    <div id="lessonsList"></div>
+  </section>
+
+  <!-- ===== محرر الدرس ===== -->
+  <section id="view-editor" class="hidden">
+    <button class="btn btn-ghost btn-sm" id="backToDash" type="button">← رجوع للوحة</button>
+    <div class="card">
+      <h2 id="editorTitle"></h2>
+      <p class="hint" id="editorMeta"></p>
+      <div id="editorMsg"></div>
+      <!-- QR -->
+      <div class="qr-box">
+        <h3>🔳 رمز QR للدرس</h3>
+        <canvas id="qrCanvas" width="520" height="520"></canvas>
+        <div class="link-box"><input id="publicLink" readonly dir="ltr"><button class="btn btn-ghost btn-sm" id="copyLinkBtn" type="button">نسخ الرابط</button></div>
+        <div class="row">
+          <button class="btn btn-primary" id="downloadQrBtn" type="button">⬇️ تحميل QR كصورة PNG</button>
+          <button class="btn btn-primary" id="shareWaBtn" type="button" style="background:#25D366">💬 مشاركة واتساب</button>
+          <button class="btn btn-ghost" id="printBtn" type="button">🖨️ صفحة الطباعة</button>
+        </div>
+      </div>
+      <!-- إضافة عنصر -->
+      <h3>➕ إضافة عنصر AR جديد</h3>
+      <label>نوع العنصر</label>
+      <div class="toggle" id="kindToggle">
+        <button type="button" data-kind="image" class="active">🖼️ صورة (تتحوّل للوحة 3D)</button>
+        <button type="button" data-kind="model">🧊 نموذج 3D (.glb)</button>
+      </div>
+      <label for="itemFile">الملف * (حد أقصى 15MB — jpg/png للصور، glb/gltf للنماذج)</label>
+      <input id="itemFile" type="file" accept="image/*,.glb,.gltf">
+      <div class="progress hidden" id="uploadProgress"><div></div></div>
+      <div id="fileInfo" class="hint"></div>
+      <label for="itemTitle">عنوان العنصر *</label>
+      <input id="itemTitle" placeholder="مثال: كوكب المريخ">
+      <label for="itemTextAr">الشرح بالعربية</label>
+      <textarea id="itemTextAr" rows="3" placeholder="اشرح العنصر هنا..."></textarea>
+      <label for="itemTextEn">الشرح بالإنجليزية (اختياري)</label>
+      <textarea id="itemTextEn" rows="2" placeholder="Optional English explanation"></textarea>
+      <label>مكان العرض</label>
+      <div class="toggle" id="placementToggle">
+        <button type="button" data-placement="wall" class="active">🧱 على الحيطة</button>
+        <button type="button" data-placement="floor">🟫 على الأرض</button>
+      </div>
+      <label>حجم العرض الحقيقي</label>
+      <div class="seg" id="sizeSeg">
+        <button type="button" data-size="small">صغير (0.5م)</button>
+        <button type="button" data-size="medium" class="active">متوسط (1م)</button>
+        <button type="button" data-size="large">كبير (1.8م)</button>
+      </div>
+      <label for="itemAudio">شرح صوتي (mp3 — اختياري)</label>
+      <input id="itemAudio" type="file" accept="audio/*">
+      <label for="itemVideo">رابط يوتيوب أو فيديو (اختياري — يظهر تحت العارض)</label>
+      <input id="itemVideo" type="url" placeholder="https://www.youtube.com/watch?v=..." dir="ltr">
+      <div class="row"><button class="btn btn-orange" id="addItemBtn" type="button">➕ أضف العنصر للدرس</button></div>
+    </div>
+    <h2>عناصر الدرس</h2>
+    <div id="itemsList"></div>
+  </section>
+
+  <!-- ===== عرض الطالب ===== -->
+  <section id="view-student" class="hidden">
+    <div class="student-head" style="margin:0 -16px;padding:22px 16px">
+      <img class="logo-img" src="/public/darsak-ar-icon.png" alt="درسك AR" style="width:56px;height:56px">
+      <h1 id="studentTitle"></h1>
+      <p id="studentMeta"></p>
+    </div>
+    <div class="onboarding">📷 <b>وجّه الكاميرا على حيطة أو أرض فاضية وحرّك الموبايل ببطء</b> — ثم اضغط الزر البرتقالي لعرض الدرس بالواقع المعزّز.</div>
+    <div id="studentItems"></div>
+    <div class="swipe-nav">
+      <button class="btn btn-ghost" id="prevItemBtn" type="button">→ السابق</button>
+      <span class="dots" id="itemDots"></span>
+      <button class="btn btn-ghost" id="nextItemBtn" type="button">التالي ←</button>
+    </div>
+    <p class="hint" style="text-align:center">مرّر بين العناصر بالأزرار أو بالسحب. إذا لم يدعم هاتفك الـ AR ستظهر اللوحة 3D على الشاشة ويمكنك تدويرها بإصبعك.</p>
+  </section>
+
+  <!-- ===== صفحة الطباعة ===== -->
+  <section id="view-print" class="hidden">
+    <div class="print-sheet" id="printSheet"></div>
+    <div class="card no-print" style="text-align:center">
+      <h2>🖨️ صفحة الطباعة</h2>
+      <p>اطبع هذه الصفحة والصقها على حيطة الفصل أو داخل الكتاب.</p>
+      <button class="btn btn-orange" id="doPrintBtn" type="button">🖨️ اطبع الآن</button>
+      <button class="btn btn-ghost" id="backFromPrint" type="button">رجوع</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  درسك <span style="font-family:'Space Grotesk'">AR</span> — الدرس قدامك.. على الحيطة • مجاني ومفتوح المصدر • يعمل على Chrome (أندرويد) وSafari (آيفون)
+</footer>
+
+<script type="module" src="/app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  }
+</script>
+</body>
+</html>
