@@ -42,7 +42,11 @@ export async function imageFileToGlb(file, { maxWidth = DEFAULT_MAX, quality = D
 
   // اللوحة: الارتفاع 1 متر، العرض = نسبة الأبعاد (يُقاس لاحقًا حسب حجم المعلّم)
   const geometry = new THREE.PlaneGeometry(aspect, 1);
-  const texture = new THREE.TextureLoader().load(imgUrl);
+  // مهم: TextureLoader.load غير متزامن — يجب انتظار تحميل الصورة قبل التصدير،
+  // وإلا يرى GLTFExporter خامة بلا بيانات صورة ويفشل بخطأ
+  // "No valid image data found. Unable to process texture"
+  const texture = await new Promise((resolve, reject) =>
+    new THREE.TextureLoader().load(imgUrl, resolve, undefined, (e) => reject(new Error('تعذّر تحميل الصورة للنموذج'))));
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.flipY = false; // مهم: حتى لا تظهر الصورة مقلوبة في glTF
   const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });

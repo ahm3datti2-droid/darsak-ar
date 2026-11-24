@@ -302,6 +302,8 @@
       <h2>📸 صوّر نفسك مع الدرس</h2>
       <p class="hint">وجّه الكاميرا لنفسك واضغط «التقط الصورة» — ستظهر بإطار الدرس، ويمكنك تحميلها أو مشاركتها.</p>
       <video id="photoVideo" autoplay playsinline style="width:100%;border-radius:12px;background:#000"></video>
+      <p id="photoError" class="hint" style="color:#b91c1c"></p>
+      <div><label for="photoFileInput">أو ارفع صورة من جهازك (ستُضاف لها إطار الدرس):</label><input id="photoFileInput" type="file" accept="image/*"></div>
       <canvas id="photoCanvas" class="hidden" style="width:100%;border-radius:12px;margin-top:10px"></canvas>
       <div class="row">
         <button class="btn btn-orange" id="capturePhotoBtn" type="button">📷 التقط الصورة</button>

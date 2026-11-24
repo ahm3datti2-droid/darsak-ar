@@ -701,7 +701,11 @@ let studentLesson = null, studentIndex = 0, arSupported = false;
 
 async function openStudent(id) {
   let lesson = null;
-  if (!navigator.onLine) lesson = findOfflineLesson(id);
+  if (id === 'les_demo_solar') {
+    // الدرس التجريبي محتوى ثابت — استخدم النسخة الحالية دائمًا (نسخة localStorage القديمة بلا أسئلة وبلا إصلاحات)
+    lesson = buildDemoLesson();
+  }
+  if (!lesson && !navigator.onLine) lesson = findOfflineLesson(id);
   if (!lesson && supabase) {
     try { lesson = await fetchPublicLesson(id); } catch (e) { console.warn('Supabase lesson fetch failed', e); }
   }
@@ -784,7 +788,7 @@ async function renderStudentItem() {
         ${it.text_en ? `<p class="hint" dir="ltr" style="text-align:left">${esc(it.text_en)}</p>` : ''}
         ${!arSupported ? `<div class="ar-fallback">⚠️ هاتفك لا يدعم الواقع المعزّز (AR) — يمكنك تدوير النموذج بإصبعك على الشاشة ومشاهدته بتقنية 3D. جرّب متصفح Chrome على أندرويد حديث يدعم ARCore.</div>` : ''}
         <button class="btn btn-orange" id="launchArBtn" type="button">📷 ${it.placement === 'floor' ? 'اعرض على الأرض' : 'اعرض على الحيطة'}</button>
-        ${it.kind === 'model' ? `<div class="row" style="align-items:center"><button class="btn btn-ghost" id="explodeBtn" type="button" onclick="window.__toggleExplode()">🧩 فكّك الأجزاء</button><input type="range" id="explodeRange" min="0" max="100" value="0" style="flex:1" oninput="window.__explodeRange(this.value)" aria-label="مستوى التفكيك"></div>` : ''}
+        ${it.kind === 'model' ? `<div class="row" style="align-items:center"><button class="btn btn-ghost" id="explodeBtn" type="button" onclick="window.__toggleExplode()" disabled>🧩 فكّك الأجزاء</button><input type="range" id="explodeRange" min="0" max="100" value="0" style="flex:1" oninput="window.__explodeRange(this.value)" aria-label="مستوى التفكيك"></div><p class="hint" id="explodeHint">جارٍ تحميل المجسم...</p>` : ''}
         ${it.audio_url ? `<div style="margin-top:12px"><button class="btn btn-ghost audio-btn" id="playAudioBtn" type="button">🔊 اسمع الشرح الصوتي</button><audio id="itemAudioEl" src="${esc(it.audio_url)}" preload="none"></audio></div>` : ''}
         ${yt ? `<div class="video-wrap"><iframe src="https://www.youtube.com/embed/${yt}" allowfullscreen loading="lazy" title="فيديو الشرح"></iframe></div>`
           : (it.video_url ? `<p style="margin-top:12px"><a href="${esc(it.video_url)}" target="_blank" rel="noopener">🎬 شاهد الفيديو</a></p>` : '')}
@@ -794,7 +798,15 @@ async function renderStudentItem() {
     </article>`;
   const mv = $('mv');
   // الحجم الحقيقي: model-viewer يقبل scale عبر خاصية scale بعد التحميل
-  mv.addEventListener('load', () => { try { mv.scale = `${scale} ${scale} ${scale}`; } catch {} });
+  mv.addEventListener('load', () => {
+    try { mv.scale = `${scale} ${scale} ${scale}`; } catch {}
+    const eb = $('explodeBtn');
+    if (eb) { eb.disabled = false; }
+    const eh = $('explodeHint');
+    if (eh) eh.textContent = '💡 جرّب «فكّك الأجزاء» لترى مكوّنات المجسم من الداخل.';
+  });
+  // احتياط: إن فات حدث التحميل (نموذج محفوظ في الكاش)، فعّل الزر بعد مهلة قصيرة
+  setTimeout(() => { const eb = $('explodeBtn'); if (eb && mv.model) eb.disabled = false; }, 2500);
   $('launchArBtn').onclick = () => {
     if (mv.activateAR) mv.activateAR().catch(() => alert('تعذّر تشغيل الـ AR على هذا الجهاز — جرّب Chrome على أندرويد، وتأكد من تفعيل ARCore.'));
     else alert('هذا المتصفح لا يدعم تشغيل AR مباشرة.');
@@ -874,15 +886,15 @@ async function copyLessonFrom(src, suffix = '') {
   };
   if (isRemote()) {
     try { await prepareItemsForRemote(lesson.items, lesson.id); }
-    catch (e) { renderLibrary(); alert('تعذّر تجهيز لوحات الدرس: ' + e.message); return; }
+    catch (e) { renderLibrary(); const ce = $('libraryCount'); if (ce) ce.textContent = '❌ تعذّر تجهيز لوحات الدرس: ' + e.message; return; }
     const { error } = await supabase.from('lessons').insert({
       id: lesson.id, teacher_id: sess.id, title: lesson.title,
       subject: lesson.subject, grade: lesson.grade, description: lesson.description,
       brand_name: lesson.brand_name, brand_logo_url: lesson.brand_logo_url,
     });
-    if (error) { renderLibrary(); alert('تعذّر نسخ الدرس: ' + friendlyAuthError(error)); return; }
+    if (error) { renderLibrary(); const ce = $('libraryCount'); if (ce) ce.textContent = '❌ تعذّر نسخ الدرس: ' + friendlyAuthError(error); return; }
     const { error: e2 } = await supabase.from('items').insert(lesson.items.map((it, i) => itemRow(it, lesson.id, i)));
-    if (e2) { renderLibrary(); alert('تعذّر نسخ العناصر: ' + friendlyAuthError(e2)); return; }
+    if (e2) { renderLibrary(); const ce = $('libraryCount'); if (ce) ce.textContent = '❌ تعذّر نسخ العناصر: ' + friendlyAuthError(e2); return; }
   }
   const lessons = getLessons(); lessons.unshift(lesson); saveLessons(lessons);
   renderDashboard(); openEditor(lesson.id);
@@ -1072,10 +1084,11 @@ async function saveActivity() {
   }
 }
 window.__finishLesson = async () => {
-  await saveActivity();
   const t = quizTotals();
   const mins = Math.max(1, Math.round(activitySeconds / 60));
   const myRows = myActivityRows();
+  // النتيجة الحالية لم تُحفظ بعد — أضفها للعرض دون تكرار عند الضغط مرتين
+  if (!activitySaved) myRows.push({ lesson_id: studentLesson?.id, student_name: studentName(), seconds: activitySeconds, quiz_score: t.score, quiz_total: t.total });
   const stats = studentStats(myRows);
   const myBadges = badgesFor(myRows);
   const box = $('finishResult');
@@ -1085,8 +1098,17 @@ window.__finishLesson = async () => {
     <p>❓ نتيجتك في الأسئلة: <b>${t.total ? `${t.score} من ${t.total} (${Math.round((t.score / t.total) * 100)}%)` : 'لا توجد أسئلة في هذا الدرس'}</b></p>
     <p>⭐ نقاطك حتى الآن: <b>${stats.points}</b> (كل إجابة صحيحة +5، وإنهاء الدرس +10)</p>
     ${myBadges.length ? `<p>🎖️ شاراتك: ${myBadges.map((b) => `${b.icon} ${b.title}`).join(' • ')}</p>` : ''}
-    <p class="hint">تم حفظ تقريرك عند المعلّم ✅ — يمكنك تصفّح الدرس مرة أخرى من الأعلى.</p>`;
+    <p class="hint"><span id="finishSaveState">⏳ جارٍ حفظ تقريرك عند المعلّم...</span> — يمكنك تصفّح الدرس مرة أخرى من الأعلى.</p>`;
   box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // الحفظ في الخلفية — اللوحة تظهر فورًا دون انتظار الشبكة
+  try {
+    await saveActivity();
+    const el = $('finishSaveState');
+    if (el) el.textContent = '✅ تم حفظ تقريرك عند المعلّم';
+  } catch {
+    const el = $('finishSaveState');
+    if (el) el.textContent = '⚠️ تعذّر حفظ التقرير على الشبكة — النتيجة محفوظة على جهازك وستظهر عند عودة الاتصال';
+  }
 };
 function fmtMins(s) { const m = Math.floor((s || 0) / 60); return m < 1 ? 'أقل من دقيقة' : m + ' دقيقة'; }
 let reportAggCache = [];
@@ -1228,7 +1250,8 @@ window.__removeOffline = (id) => { const map = loadLocal(LS_OFFLINE, {}); delete
 // ---------- ورقة شغل AR مطبوعة ----------
 async function resolveLesson(id) {
   let lesson = null;
-  if (supabase) { try { lesson = await fetchPublicLesson(id); } catch {} }
+  if (id === 'les_demo_solar') lesson = buildDemoLesson();
+  if (!lesson && supabase) { try { lesson = await fetchPublicLesson(id); } catch {} }
   if (!lesson) lesson = findLocalLesson(id);
   if (!lesson) lesson = await findLibraryLesson(id);
   if (!lesson) lesson = findOfflineLesson(id);
@@ -1322,28 +1345,47 @@ window.__copyShared = async (id) => {
 };
 
 // ---------- تفكيك المجسم (وضع الفصل) ----------
+// ملاحظة: لا نستورد three هنا — كل الأصناف (Vector3/Box3/Matrix4) تُؤخذ من كائنات
+// النموذج الحي نفسه، فلا يفشل التفكيك لو تعذّر تحميل مكتبة three من الشبكة.
 let explodeFactor = 0;
 async function applyExplode(factor) {
-  const mv = $('mv'); if (!mv || !mv.model) return;
-  explodeFactor = factor;
-  const THREE = await import('three');
+  const mv = $('mv'); if (!mv || !mv.model) return false;
   const model = mv.model;
-  const box = new THREE.Box3().setFromObject(model);
-  const center = box.getCenter(new THREE.Vector3());
+  const V3 = model.position.constructor; // THREE.Vector3 من النسخة الحية
+  model.updateWorldMatrix(true, true);
+  // مركز النموذج: متوسط مراكز الصناديق المحيطة بكل قطعة (في إحداثيات العالم)
+  const center = new V3();
+  let n = 0;
+  model.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    o.geometry.computeBoundingBox();
+    const c = o.geometry.boundingBox.getCenter(new V3());
+    c.applyMatrix4(o.matrixWorld);
+    center.add(c); n++;
+  });
+  if (!n) return false;
+  center.divideScalar(n);
   model.traverse((o) => {
     if (!o.isMesh) return;
     if (!o.userData.darsakOrig) o.userData.darsakOrig = o.position.clone();
-    const ob = new THREE.Box3().setFromObject(o);
-    const oc = ob.getCenter(new THREE.Vector3());
-    const dir = oc.sub(center);
-    if (dir.lengthSq() < 1e-6) dir.set(0, 1, 0);
-    dir.normalize();
-    o.position.copy(o.userData.darsakOrig).addScaledVector(dir, factor);
+    o.geometry.computeBoundingBox();
+    const c = o.geometry.boundingBox.getCenter(new V3());
+    c.applyMatrix4(o.matrixWorld);
+    const dirW = c.sub(center); // اتجاه من المركز إلى القطعة (إحداثيات العالم)
+    if (dirW.lengthSq() < 1e-6) dirW.set(0, 1, 0);
+    dirW.normalize();
+    // حوّل الاتجاه إلى إحداثيات الأب (الموضع المحلي للقطعة)
+    const parent = o.parent || model;
+    const dirL = dirW.clone().transformDirection(parent.matrixWorld.clone().invert());
+    o.position.copy(o.userData.darsakOrig).addScaledVector(dirL, factor);
   });
+  explodeFactor = factor;
+  return true;
 }
 window.__toggleExplode = async () => {
   const next = explodeFactor > 0 ? 0 : 0.5;
-  await applyExplode(next);
+  const ok = await applyExplode(next);
+  if (!ok) { alert('المجسّم لم يكتمل تحميله بعد — انتظر ثانية وحاول مجددًا.'); return; }
   const btn = $('explodeBtn');
   if (btn) btn.textContent = next > 0 ? '🔩 ركّب الأجزاء' : '🧩 فكّك الأجزاء';
   const rg = $('explodeRange'); if (rg) rg.value = String(Math.round((next / 0.6) * 100));
@@ -1359,22 +1401,32 @@ window.__explodeRange = (v) => {
 let photoStream = null;
 async function openPhotoMode() {
   const modal = $('photoModal'); if (!modal) return;
+  const errEl = $('photoError'); if (errEl) errEl.textContent = '';
   modal.classList.remove('hidden');
+  if (!navigator.mediaDevices?.getUserMedia) {
+    if (errEl) errEl.textContent = 'هذا المتصفح لا يدعم الكاميرا — يمكنك رفع صورة من جهازك بالأسفل وستُضاف لها إطار الدرس.';
+    return;
+  }
   try {
     photoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
     const v = $('photoVideo'); v.srcObject = photoStream; await v.play();
-  } catch (e) { alert('تعذّر فتح الكاميرا — تأكد من السماح بالكاميرا ومن فتح الموقع عبر HTTPS.'); closePhotoMode(); }
+  } catch (e) {
+    if (errEl) errEl.textContent = 'تعذّر فتح الكاميرا (ربما رفضت الإذن أو لا توجد كاميرا) — يمكنك رفع صورة من جهازك بالأسفل وستُضاف لها إطار الدرس.';
+  }
 }
-function closePhotoMode() {
-  const modal = $('photoModal'); if (modal) modal.classList.add('hidden');
-  if (photoStream) { photoStream.getTracks().forEach((t) => t.stop()); photoStream = null; }
-}
-async function capturePhoto() {
-  const v = $('photoVideo'); const c = $('photoCanvas');
-  if (!v || !v.videoWidth) { alert('الكاميرا لم تجهز بعد — انتظر ثانية وحاول مجددًا.'); return; }
-  c.width = v.videoWidth; c.height = v.videoHeight;
+async function handlePhotoFile(file) {
+  if (!file || !/^image\//.test(file.type)) return;
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return;
+  const c = $('photoCanvas');
+  c.width = bitmap.width; c.height = bitmap.height;
   const ctx = c.getContext('2d');
-  ctx.drawImage(v, 0, 0, c.width, c.height);
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  finishPhotoCanvas(c);
+}
+function finishPhotoCanvas(c) {
+  const ctx = c.getContext('2d');
   const barH = Math.round(c.height * 0.14);
   ctx.fillStyle = '#1E1B4B'; ctx.fillRect(0, c.height - barH, c.width, barH);
   ctx.fillStyle = '#fff'; ctx.font = `900 ${Math.round(barH * 0.42)}px Cairo, sans-serif`; ctx.textAlign = 'center';
@@ -1383,18 +1435,31 @@ async function capturePhoto() {
   ctx.font = `700 ${Math.round(barH * 0.28)}px Cairo, sans-serif`; ctx.fillStyle = '#A5B4FC';
   ctx.fillText('درسك AR — الدرس قدامك.. على الحيطة • www.drsak.online', c.width / 2, c.height - barH * 0.08);
   c.classList.remove('hidden');
-  const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
-  if (!blob) return;
-  const url = URL.createObjectURL(blob);
-  const dl = $('photoDownload'); dl.href = url; dl.download = 'darsak-photo.png'; dl.classList.remove('hidden');
-  const sh = $('photoShare');
-  if (navigator.canShare) {
-    const file = new File([blob], 'darsak-photo.png', { type: 'image/png' });
-    if (navigator.canShare({ files: [file] })) {
-      sh.classList.remove('hidden');
-      sh.onclick = () => navigator.share({ files: [file], title: 'درسك AR', text: `صورة مع درس «${studentLesson?.title || ''}»` }).catch(() => {});
+  c.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const dl = $('photoDownload'); dl.href = url; dl.download = 'darsak-photo.png'; dl.classList.remove('hidden');
+    const sh = $('photoShare');
+    if (navigator.canShare) {
+      const f = new File([blob], 'darsak-photo.png', { type: 'image/png' });
+      if (navigator.canShare({ files: [f] })) {
+        sh.classList.remove('hidden');
+        sh.onclick = () => navigator.share({ files: [f], title: 'درسك AR', text: `صورة مع درس «${studentLesson?.title || ''}»` }).catch(() => {});
+      }
     }
-  }
+  }, 'image/png');
+}
+function closePhotoMode() {
+  const modal = $('photoModal'); if (modal) modal.classList.add('hidden');
+  if (photoStream) { photoStream.getTracks().forEach((t) => t.stop()); photoStream = null; }
+}
+async function capturePhoto() {
+  const v = $('photoVideo'); const c = $('photoCanvas');
+  if (!v || !v.videoWidth) { const errEl = $('photoError'); if (errEl) errEl.textContent = 'الكاميرا لم تجهز بعد — انتظر ثانية وحاول مجددًا، أو ارفع صورة من جهازك بالأسفل.'; return; }
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(v, 0, 0, c.width, c.height);
+  finishPhotoCanvas(c);
 }
 window.__openPhotoMode = openPhotoMode;
 window.__closePhotoMode = closePhotoMode;
@@ -1427,12 +1492,12 @@ function myActivityRows() {
 /* ================= صفحة الطباعة ================= */
 async function openPrint(id) {
   let lesson = null;
-  if (supabase) {
+  if (id === 'les_demo_solar') lesson = buildDemoLesson();
+  if (!lesson && supabase) {
     try { lesson = await fetchPublicLesson(id); } catch {}
   }
   if (!lesson) lesson = findLocalLesson(id);
   if (!lesson) lesson = await findLibraryLesson(id);
-  if (!lesson && id === 'les_demo_solar') lesson = buildDemoLesson();
   showView('view-print');
   const sheet = $('printSheet');
   if (!lesson) {
@@ -1566,6 +1631,7 @@ async function init() {
   $('photoBtn').onclick = openPhotoMode;
   $('closePhotoBtn').onclick = closePhotoMode;
   $('capturePhotoBtn').onclick = capturePhoto;
+  $('photoFileInput').onchange = (e) => handlePhotoFile(e.target.files[0]);
   $('downloadOfflineBtn').onclick = downloadLessonOffline;
   $('ctaLibrary').onclick = () => { history.pushState(null, '', '?library=1'); openLibrary(); };
   $('dashLibraryBtn').onclick = () => { history.pushState(null, '', '?library=1'); openLibrary(); };
