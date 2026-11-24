@@ -322,6 +322,38 @@ async function addItem() {
   finally { btn.disabled = false; setTimeout(() => prog.classList.add('hidden'), 600); }
 }
 
+/* ================= QR محلي (بدون CDN) ================= */
+// مكتبة qrcode-generator مضمّنة محليًا في lib/qrcode-generator.min.js.
+// إن لم توجد مكتبة qrcode الخارجية، نعرّف QRCode.toCanvas بنفس الواجهة حتى يعمل الرمز دائمًا.
+if (typeof QRCode === 'undefined' && typeof qrcode !== 'undefined') {
+  window.QRCode = {
+    toCanvas(canvas, text, opts = {}) {
+      return new Promise((resolve, reject) => {
+        try {
+          const qr = qrcode(0, 'M');
+          qr.addData(text);
+          qr.make();
+          const count = qr.getModuleCount();
+          const margin = opts.margin ?? 2;
+          const size = opts.width || 520;
+          const cell = size / (count + margin * 2);
+          const ctx = canvas.getContext('2d');
+          canvas.width = size; canvas.height = size;
+          ctx.fillStyle = (opts.color && opts.color.light) || '#ffffff';
+          ctx.fillRect(0, 0, size, size);
+          ctx.fillStyle = (opts.color && opts.color.dark) || '#000000';
+          for (let r = 0; r < count; r++) {
+            for (let c = 0; c < count; c++) {
+              if (qr.isDark(r, c)) ctx.fillRect((c + margin) * cell, (r + margin) * cell, Math.ceil(cell), Math.ceil(cell));
+            }
+          }
+          resolve();
+        } catch (e) { reject(e); }
+      });
+    },
+  };
+}
+
 /* ================= QR ================= */
 async function drawQR(text) {
   const canvas = $('qrCanvas');
@@ -334,7 +366,16 @@ async function drawQR(text) {
     const s = 110, x = (canvas.width - s) / 2, y = (canvas.height - s) / 2;
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(x - 8, y - 8, s + 16, s + 16, 18); ctx.fill();
     ctx.drawImage(img, x, y, s, s);
-  } catch (e) { console.warn('QR failed', e); }
+  } catch (e) {
+    console.warn('QR failed', e);
+    // لا تترك مساحة بيضاء صامتة أبدًا: اكتب رسالة واضحة على اللوحة
+    try {
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#991b1b'; ctx.font = 'bold 24px Cairo, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('تعذّر إنشاء رمز QR', canvas.width / 2, canvas.height / 2);
+    } catch {}
+  }
 }
 function downloadQR() { const a = document.createElement('a'); a.href = $('qrCanvas').toDataURL('image/png'); a.download = 'darsak-ar-qr.png'; a.click(); }
 
@@ -417,10 +458,13 @@ async function renderStudentItem() {
 /* ================= صفحة الطباعة ================= */
 async function openPrint(id) {
   const lesson = getLessons().find((l) => l.id === id);
-  if (!lesson) return;
-  const link = publicLink(id);
   showView('view-print');
   const sheet = $('printSheet');
+  if (!lesson) {
+    sheet.innerHTML = '<h2>الدرس غير موجود</h2><p>الرابط غير صحيح أو أن الدرس حُذف.</p>';
+    return;
+  }
+  const link = publicLink(id);
   sheet.innerHTML = `
     <img class="logo" src="/public/darsak-ar-icon.png" alt="درسك AR">
     <h1>درسك <span style="font-family:'Space Grotesk';background:#EA580C;color:#fff;border-radius:999px;padding:2px 10px">AR</span></h1>
