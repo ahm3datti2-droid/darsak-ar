@@ -115,33 +115,60 @@ darsak-ar/
 
 ## الإطلاق: SEO والأمان — الدومين الموحّد www + هيدرز الأمان + CSP
 
-كل الروابط العامة تشير إلى **https://www.drsak.online/** فقط (الدومين الأساسي)، وأي طلب على `drsak.online` أو `darsak-ar.vercel.app` يُحوَّل إليه (301).
+كل الروابط العامة تشير إلى **https://www.drsak.online/** فقط (الدومين الأساسي)، وأي طلب على `drsak.online` أو `darsak-ar.vercel.app` يُحوَّل إليه (301 من إعدادات Domains في Vercel).
 
 ### 1) صورة المعاينة (Open Graph)
 - الملف: `frontend/public/og-image.png` — ‏**1200×630** (القياس المطلوب لفيسبوك/واتساب).
-- تُبنى بالسكربت المحلي (PIL + خط Noto Sans Arabic + شعار الموقع) — ليست مولّدة بالذكاء الاصطناعي حتى يكون النص العربي سليمًا.
+- مبنية بسكربت محلي (PIL + خط Noto Sans Arabic + شعار الموقع) حتى يكون النص العربي سليمًا.
 - تُستخدم في وسوم `og:image` و`twitter:image` داخل `<head>` في `index.html` مع `og:image:width/height`.
 
 ### 2) الـ canonical ووسوم Open Graph
-- في `<head>` في `frontend/index.html`: `rel="canonical"` + `og:type/site_name/title/description/url/image/locale (ar_EG)` + `twitter:card (summary_large_image)` — كلها تشير إلى `https://www.drsak.online/`.
-- `frontend/sitemap.xml` فيه **رابط واحد فقط**: `https://www.drsak.online/` (الروابط القديمة `drsak.online` و`darsak-ar.vercel.app` حُذفت منه لأنها تُحوَّل أصلًا).
+- في `<head>` في `frontend/index.html` (بعد وسم description): `rel="canonical"` + `og:type/site_name/locale (ar_AR)/url/title/description/image` + `twitter:card (summary_large_image)` — كلها تشير إلى `https://www.drsak.online/`.
+- `frontend/sitemap.xml` فيه **رابط واحد فقط**: `https://www.drsak.online/`.
 
 ### 3) إعدادات Domains في Vercel
-- من لوحة Vercel ← المشروع `darsak-ar` ← **Settings ← Domains**: اجعل `www.drsak.online` هو **Primary Domain**، وتأكد أن `drsak.online` يحوّل إلى `www` (يظهر كـ Redirect).
-- التحويل مضمون أيضًا بالكود (انظر الخطوة 4) حتى لو تغيّر إعداد اللوحة.
+- من لوحة Vercel ← المشروع `darsak-ar` ← **Settings ← Domains**: `www.drsak.online` هو دومين الإنتاج الأساسي؛ `drsak.online` مضبوط عليه **Redirect 308 إلى www**؛ و`darsak-ar.vercel.app` مضبوط عليه **Redirect 308 إلى www** من نفس الصفحة (خيار "Redirect to Another Domain").
+- ملاحظة: لا يوجد زر "Primary" في اللوحة — كون www هو دومين الإنتاج والباقي يحوّل إليه هو ما يجعله الأساسي حسب توثيق Vercel.
 
-### 4) `vercel.json` — الهيدرز الأمنية + التحويلات (وضع تجريبي أولًا)
-- الملف في `frontend/vercel.json` (لأن Root Directory هو `frontend`) ويحتوي:
-  - **redirects** (301) حسب الـ host: `drsak.online` → `www.drsak.online`، و`darsak-ar.vercel.app` → `www.drsak.online`.
-  - **headers**: `Strict-Transport-Security` + `X-Content-Type-Options: nosniff` + `X-Frame-Options: DENY` + `Referrer-Policy` + `Permissions-Policy` (`camera=(self)` لأن الـ AR يحتاج الكاميرا).
-  - **CSP في وضع تجريبي** (`Content-Security-Policy-Report-Only`): يسجّل المخالفات في الـ Console **دون أن يحجب أي شيء**، حتى لا يكسر الموقع.
-- **لماذا `unsafe-inline` في `script-src` و`style-src`؟** التطبيق يستخدم `onclick="..."` داخل القوالب المولّدة ديناميكيًا + سكربت تسجيل الـ Service Worker مضمّن في الصفحة + `style="..."` في أماكن كثيرة — إزالتها تتطلب إعادة كتابة كبيرة. الـ CSP ما زال يحمي من: تحميل سكربتات من مصادر غير مصرّح بها، والتضمين في iframes (`frame-ancestors 'none'`)، والبلاجنز (`object-src 'none'`)، وتغيير الـ base.
+### 4) `vercel.json` — الهيدرز الأمنية + CSP (وضع تجريبي أولًا)
+- الملف في `frontend/vercel.json` (لأن Root Directory هو `frontend`) ويحتوي **مفتاح `headers` فقط**:
+  - `Strict-Transport-Security: max-age=63072000; includeSubDomains` + `X-Content-Type-Options: nosniff` + `X-Frame-Options: DENY` + `Referrer-Policy` + `Permissions-Policy` (الكاميرا وحساسات الحركة `accelerometer/gyroscope/magnetometer` و`xr-spatial-tracking` مسموحة لنفس الموقع — الـ AR يحتاجها).
+  - **CSP في وضع تجريبي** (`Content-Security-Policy-Report-Only`): يسجّل المخالفات في الـ Console **دون أن يحجب أي شيء**، حتى لا يكسر الموقع. يسمح بفيديوهات يوتيوب المضمّنة (`frame-src` يوتيوب) وبنماذج `modelviewer.dev` وSupabase والـ CDN.
+- **لماذا `unsafe-inline` في `script-src` و`style-src`؟** الصفحة فيها `importmap` و`style="..."` و`onclick="..."` — إزالتها تتطلب إعادة كتابة كبيرة. هذا أضعف قليلًا، والأحسن بعدين نقلهم لملفات وإضافة `nonce`.
+- إن كان عندك `vercel.json` قديم، ادمج **مفتاح `headers` فقط**.
 
 ### 5) التفعيل بعد التجربة
-1. ادفع `vercel.json` (التجريبي) وجرّب الموقع كاملًا: الصفحة الرئيسية، تسجيل الدخول، إنشاء درس، الـ QR، عرض الطالب، الطباعة — وافتح **Console** وابحث عن أي سطر `Content-Security-Policy` (مخالفة).
+1. ادفع `vercel.json` (التجريبي) وجرّب الموقع كاملًا: رفع صورة، QR، عارض 3D، AR، يوتيوب، تسجيل دخول Supabase — وافتح **Console** وابحث عن أي سطر `Content-Security-Policy` (مخالفة).
 2. إن لم تظهر مخالفات: استبدل محتوى `frontend/vercel.json` بمحتوى `frontend/vercel.enforce.json` (نفس الملف تمامًا لكن الهيدر `Content-Security-Policy` بدل `Content-Security-Policy-Report-Only`) وادفع من جديد.
 3. تحقق من الهيدرز الحيّة: `curl -sI https://www.drsak.online/ | grep -i "content-security-policy\|strict-transport"`.
 4. ⚠️ **ارفع رقم `CACHE` في `sw.js` مع كل تغيير** — وإلا يبقى المتصفح يعرض النسخة القديمة.
+
+### 6) تأكيد أمان Supabase (RLS)
+- `supabase/schema.sql` يفعّل `ROW LEVEL SECURITY` على الجداول الأربعة (`teachers`, `lessons`, `items`, `site_visits`) مع 13 سياسة + سياسات Storage للبوكت العام `darsak-files` (قراءة عامة، رفع للمعلّمين فقط) — تحقق أن الملف طُبّق كاملًا في SQL Editor وأنه لم تُنشأ أي سياسة مفتوحة.
+
+## الإصدار 2: المكتبة + الأسئلة + الحصة المباشرة + التقارير (2026-11-24)
+
+### 1) مكتبة المنهج المصري الجاهزة
+- البيانات في `frontend/lib/curriculum.js` (تُحمَّل عند الطلب فقط — إن فشل تحميلها لا يتأثر باقي التطبيق): **16 درسًا** (42 عنصرًا، 42 سؤالًا) حسب الصف (رابع/خامس/سادس ابتدائي + أولى إعدادي) والمادة (علوم/رياضيات/دراسات/عربي/إنجليزي) والترم.
+- من الرئيسية أو اللوحة: «📚 مكتبة المنهج المصري» → تصفية بالصف/المادة/الترم → «👀 عرض» أو «➕ أضف إلى دروسي» (ينسخ الدرس بعناصره وأسئلته إلى دروس المعلّم — لوحات النص تُحوَّل إلى `.glb` وتُرفع للتخزين في وضع Supabase) أو «🖨️ طباعة QR» مباشرة من المكتبة.
+- دروس المكتبة تُفتح في عرض الطالب وتُطبع دون أن تكون في جدول `lessons`.
+
+### 2) أسئلة الفهم داخل الـ AR
+- كل عنصر يمكن أن يحمل سؤالًا: `item.quiz = { q, choices: [{t, ok, pos?}] }` — يُخزَّن في عمود `items.quiz` (jsonb) في Supabase.
+- في عرض الطالب: الاختيارات ذات `pos` تظهر كأزرار تسمية (hotspots) على المجسّم نفسه، وكل الاختيارات تظهر أيضًا كأزرار أسفل العارض (بديل مضمون حتى لو كان موضع النقطة غير دقيق — مواقع `pos` تقريبية). أول ضغطة تُحتسب؛ الإجابة الصحيحة تخضرّ والخاطئة تحمرّ وتُكشف الصحيحة.
+- إضافة سؤال من المحرر: حقل السؤال + 3 اختيارات + اختيار الإجابة الصحيحة (يظهر شارة «❓ سؤال» في قائمة العناصر).
+- عند إنهاء كل أسئلة الدرس تظهر النتيجة للطالب فورًا.
+
+### 3) الحصة المباشرة (مفيدة في السناتر)
+- من بطاقة الدرس في اللوحة: «📡 حصة مباشرة» → يُنشئ كودًا من 4 أرقام ويفتح عرض الطالب كمتحكم.
+- الطلاب يفتحون رابط الدرس ويضغطون «🎛️ انضم لحصة مباشرة» ويدخلون الكود — كل تنقّل من المعلّم يُبث لكل الموبايلات فورًا عبر **Supabase Realtime broadcast** (قناة `live-<code>`)، وأزرار التنقل عند الطلاب تُقفل أثناء الحصة.
+- «إنهاء الحصة» يبث `end` فيُفتح التنقل للطلاب. يعمل فقط مع اتصال Supabase (لا وضع محلي للحصة).
+
+### 4) تقارير الطلاب + واتساب لولي الأمر
+- عند فتح الدرس يُطلب اسم الطالب مرة واحدة (يُحفظ في `localStorage`)، ويُقاس الوقت داخل الدرس (عدّاد كل 5 ثوانٍ أثناء ظهور الصفحة).
+- عند «🏁 إنهاء الدرس» (أو إغلاق الصفحة) يُحفظ صف في جدول `student_activity` (الدرس، الاسم، الثواني، نتيجة الأسئلة) — وفي الوضع المحلي يُحفظ في `localStorage` فقط.
+- في اللوحة: قسم «📊 تقارير الطلاب» يجمع حسب الطالب+الدرس: إجمالي الوقت، أفضل نتيجة، آخر نشاط — وزر «📲 واتساب لولي الأمر» يطلب رقم الواتساب ويفتح `wa.me` بنص التقرير الجاهز.
+- الجدول والسياسات في `supabase/schema.sql`: الإدخال مفتوح للطلاب المجهولين، والقراءة لمالك الدرس أو الأدمن فقط.
 
 ## التطوير محليًا
 ```bash

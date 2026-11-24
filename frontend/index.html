@@ -8,14 +8,13 @@
 <link rel="canonical" href="https://www.drsak.online/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="درسك AR">
+<meta property="og:locale" content="ar_AR">
+<meta property="og:url" content="https://www.drsak.online/">
 <meta property="og:title" content="درسك AR — الدرس قدامك.. على الحيطة">
 <meta property="og:description" content="حوّل صور الدروس ونماذج 3D إلى واقع معزّز يفتحه الطالب بمسح QR — بدون تثبيت تطبيق.">
-<meta property="og:url" content="https://www.drsak.online/">
 <meta property="og:image" content="https://www.drsak.online/public/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="درسك AR — الدرس قدامك.. على الحيطة">
-<meta property="og:locale" content="ar_EG">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="درسك AR — الدرس قدامك.. على الحيطة">
 <meta name="twitter:description" content="حوّل صور الدروس ونماذج 3D إلى واقع معزّز يفتحه الطالب بمسح QR — بدون تثبيت تطبيق.">
@@ -70,6 +69,7 @@
       <p>الدرس قدامك.. على الحيطة — حوّل أي صورة أو نموذج 3D إلى تجربة واقع معزّز، والطالب يفتحها بمسح QR بدون تثبيت أي تطبيق.</p>
       <div class="btn-row">
         <button class="btn btn-orange" id="ctaTeacher" type="button" style="width:auto">👩‍🏫 ابدأ كمعلّم — مجانًا</button>
+        <button class="btn btn-ghost" id="ctaLibrary" type="button">📚 مكتبة المنهج المصري</button>
         <button class="btn btn-ghost" id="ctaDemo" type="button">🪐 جرّب الدرس التجريبي</button>
       </div>
     </div>
@@ -114,10 +114,18 @@
         <div><label for="newDesc">وصف قصير</label><input id="newDesc" placeholder="وصف مختصر للدرس"></div>
       </div>
       <div class="row"><button class="btn btn-orange" id="createLessonBtn" type="button">➕ إنشاء درس جديد</button></div>
+      <div class="row"><button class="btn btn-primary" id="dashLibraryBtn" type="button">📚 مكتبة المنهج المصري — دروس جاهزة</button></div>
       <div id="dashMsg"></div>
     </div>
     <h2 id="lessonsHeading">دروسي</h2>
     <div id="lessonsList"></div>
+
+    <!-- ===== تقارير الطلاب ===== -->
+    <div class="card" id="reportsSection">
+      <h2>📊 تقارير الطلاب</h2>
+      <p class="hint">شاف أنهي درس، وقعد قد إيه، وجاب كام في الأسئلة — وأرسل التقرير لولي الأمر على واتساب.</p>
+      <div id="reportsList"></div>
+    </div>
 
     <!-- ===== لوحة الأدمن (تظهر فقط لمن لديه is_admin) ===== -->
     <div id="adminSection" class="hidden">
@@ -188,6 +196,14 @@
       <input id="itemAudio" type="file" accept="audio/*">
       <label for="itemVideo">رابط يوتيوب أو فيديو (اختياري — يظهر تحت العارض)</label>
       <input id="itemVideo" type="url" placeholder="https://www.youtube.com/watch?v=..." dir="ltr">
+      <label>سؤال فهم (اختياري — يظهر للطالب مع هذا العنصر ويُحسب في تقريره)</label>
+      <input id="quizQ" placeholder="مثال: ما وظيفة الجذر؟">
+      <div class="grid2">
+        <div><label for="quizC1">الاختيار 1</label><input id="quizC1" placeholder="الاختيار الأول"></div>
+        <div><label for="quizC2">الاختيار 2</label><input id="quizC2" placeholder="الاختيار الثاني"></div>
+        <div><label for="quizC3">الاختيار 3</label><input id="quizC3" placeholder="الاختيار الثالث"></div>
+        <div><label for="quizCorrect">الإجابة الصحيحة</label><select id="quizCorrect"><option value="0">الاختيار 1</option><option value="1">الاختيار 2</option><option value="2">الاختيار 3</option></select></div>
+      </div>
       <div class="row"><button class="btn btn-orange" id="addItemBtn" type="button">➕ أضف العنصر للدرس</button></div>
     </div>
     <h2>عناصر الدرس</h2>
@@ -202,6 +218,13 @@
       <p id="studentMeta"></p>
     </div>
     <div class="onboarding">📷 <b>وجّه الكاميرا على حيطة أو أرض فاضية وحرّك الموبايل ببطء</b> — ثم اضغط الزر البرتقالي لعرض الدرس بالواقع المعزّز.</div>
+    <div id="studentNameBar" class="name-bar"></div>
+    <div id="liveBanner" class="live-banner hidden"></div>
+    <div class="row" id="liveJoinRow" style="margin:8px 0">
+      <button class="btn btn-ghost btn-sm" id="joinLiveBtn" type="button">🎛️ انضم لحصة مباشرة</button>
+      <input id="liveCodeInput" placeholder="كود الحصة (4 أرقام)" inputmode="numeric" maxlength="4" style="max-width:180px" dir="ltr">
+      <button class="btn btn-orange btn-sm" id="finishLessonBtn" type="button" style="width:auto">🏁 إنهاء الدرس وعرض نتيجتي</button>
+    </div>
     <div id="studentItems"></div>
     <div class="swipe-nav">
       <button class="btn btn-ghost" id="prevItemBtn" type="button">→ السابق</button>
@@ -209,6 +232,21 @@
       <button class="btn btn-ghost" id="nextItemBtn" type="button">التالي ←</button>
     </div>
     <p class="hint" style="text-align:center">مرّر بين العناصر بالأزرار أو بالسحب. إذا لم يدعم هاتفك الـ AR ستظهر اللوحة 3D على الشاشة ويمكنك تدويرها بإصبعك.</p>
+  </section>
+
+  <!-- ===== مكتبة المنهج ===== -->
+  <section id="view-library" class="hidden">
+    <div class="card">
+      <h2>📚 مكتبة المنهج المصري</h2>
+      <p class="hint">دروس AR جاهزة حسب الصف والمادة والترم — اختر الدرس وأضفه لدروسك أو اطبع الـ QR مباشرة.</p>
+      <div class="grid2">
+        <div><label for="libGrade">الصف</label><select id="libGrade"><option value="">كل الصفوف</option></select></div>
+        <div><label for="libSubject">المادة</label><select id="libSubject"><option value="">كل المواد</option></select></div>
+        <div><label for="libTerm">الترم</label><select id="libTerm"><option value="">كل الترمات</option></select></div>
+      </div>
+      <p class="hint" id="libraryCount"></p>
+    </div>
+    <div id="libraryGrid"></div>
   </section>
 
   <!-- ===== صفحة الطباعة ===== -->

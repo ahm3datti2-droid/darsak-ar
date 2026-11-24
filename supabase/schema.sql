@@ -65,6 +65,22 @@ create table if not exists public.site_visits (
   unique (visitor_id, path, day)
 );
 
+-- ================= نشاط الطلاب (تقارير: الدرس + الوقت + نتيجة الأسئلة) =================
+-- صف واحد لكل جلسة طالب (يُحفظ عند إنهاء الدرس أو إغلاق الصفحة).
+create table if not exists public.student_activity (
+  id           bigint generated always as identity primary key,
+  lesson_id    text not null,
+  student_name text not null default '',
+  seconds      integer not null default 0,
+  quiz_score   integer not null default 0,
+  quiz_total   integer not null default 0,
+  created_at   timestamptz not null default now()
+);
+create index if not exists idx_activity_lesson on public.student_activity (lesson_id, created_at desc);
+
+-- عمود الأسئلة في عناصر الدرس (JSON: {q, choices:[{t, ok, pos?}]})
+alter table public.items add column if not exists quiz jsonb;
+
 -- ================= الفهارس =================
 create index if not exists idx_lessons_teacher on public.lessons (teacher_id);
 create index if not exists idx_lessons_created on public.lessons (created_at desc);
@@ -102,6 +118,7 @@ alter table public.teachers   enable row level security;
 alter table public.lessons    enable row level security;
 alter table public.items      enable row level security;
 alter table public.site_visits enable row level security;
+alter table public.student_activity enable row level security;
 
 -- ================= صلاحيات الجداول (GRANT) — لا تنسَها =================
 -- سياسات RLS وحدها لا تكفي: يجب منح الصلاحية على الجدول للدور أولًا،
@@ -115,6 +132,7 @@ grant insert, update, delete on public.items to authenticated;
 grant select, insert, update on public.teachers to authenticated;
 grant insert, select on public.site_visits to anon, authenticated;
 grant delete on public.site_visits to authenticated;
+grant insert, select on public.student_activity to anon, authenticated;
 
 -- المعلّمون: يرى كل معلّم صفّه، والأدمن يرى الكل
 create policy "teachers_select_own_or_admin" on public.teachers
@@ -166,6 +184,17 @@ create policy "visits_select_admin" on public.site_visits
   for select using (public.is_admin());
 create policy "visits_delete_admin" on public.site_visits
   for delete using (public.is_admin());
+
+-- نشاط الطلاب: الإدخال مفتوح للطلاب المجهولين، القراءة لمالك الدرس أو الأدمن
+create policy "activity_insert_open" on public.student_activity
+  for insert with check (true);
+create policy "activity_select_owner_or_admin" on public.student_activity
+  for select using (
+    exists (select 1 from public.lessons
+            where lessons.id = student_activity.lesson_id
+              and lessons.teacher_id = auth.uid())
+    or public.is_admin()
+  );
 
 -- ================= Storage: bucket darsak-files =================
 -- أنشئ الـ bucket كـ Public من لوحة Storage أولًا (أو نفّذ السطر التالي):

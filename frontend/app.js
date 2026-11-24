@@ -29,6 +29,23 @@ const SAMPLE_MODELS = 'https://modelviewer.dev/shared-assets/models/';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = (p) => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+const LS_STUDENT = 'darsak.student.v1'; // اسم الطالب (لتقارير المعلّم)
+const LS_ACTIVITY = 'darsak.activity.v1'; // نسخة محلية من نشاط الطلاب (احتياطي دون اتصال)
+
+/* ================= مكتبة المنهج (تُحمَّل عند الطلب فقط) ================= */
+let libraryCache = null;
+async function loadLibrary() {
+  if (libraryCache) return libraryCache;
+  try {
+    const m = await import('./lib/curriculum.js');
+    libraryCache = m.LIBRARY;
+    return libraryCache;
+  } catch (e) { console.warn('library load failed', e); return null; }
+}
+async function findLibraryLesson(id) {
+  const lib = await loadLibrary();
+  return lib?.lessons.find((l) => l.id === id) || null;
+}
 async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -102,10 +119,10 @@ function buildDemoLesson() {
     subject: 'علوم', grade: 'الصف الرابع', description: 'درس تجريبي: تعرّف على كواكب المجموعة الشمسية وروّاد الفضاء في الواقع المعزّز.',
     views: 0, created_at: new Date().toISOString(),
     items: [
-      { id: 'itm_demo_1', kind: 'model', title: 'رائد الفضاء', text_ar: 'رائد الفضاء يسافر خارج الأرض في مركبة فضائية، ويرتدي بدلة خاصة تحميه وتحافظ على الهواء والأكسجين حوله.', text_en: 'An astronaut travels into space wearing a special suit that protects them and supplies air.', file_url: SAMPLE_MODELS + 'Astronaut.glb', glb_url: SAMPLE_MODELS + 'Astronaut.glb', placement: 'floor', size: 'medium', audio_url: '', video_url: '' },
+      { id: 'itm_demo_1', kind: 'model', title: 'رائد الفضاء', text_ar: 'رائد الفضاء يسافر خارج الأرض في مركبة فضائية، ويرتدي بدلة خاصة تحميه وتحافظ على الهواء والأكسجين حوله.', text_en: 'An astronaut travels into space wearing a special suit that protects them and supplies air.', file_url: SAMPLE_MODELS + 'Astronaut.glb', glb_url: SAMPLE_MODELS + 'Astronaut.glb', placement: 'floor', size: 'medium', audio_url: '', video_url: '', quiz: { q: 'ما الذي يحمي رائد الفضاء في الفضاء؟', choices: [ { t: 'البدلة الفضائية الخاصة', ok: true, pos: [0, 1.5, 0.15] }, { t: 'المظلة', ok: false, pos: [0, 1.2, -0.25] }, { t: 'الحذاء الرياضي', ok: false, pos: [0.15, 0.1, 0.1] } ] } },
       { id: 'itm_demo_2', kind: 'model', title: 'الروبوت المساعد', text_ar: 'الروبوتات تساعد روّاد الفضاء والعلماء في استكشاف الكواكب وجمع العينات من أماكن خطرة على الإنسان.', text_en: 'Robots help astronauts explore planets and collect samples from places too dangerous for humans.', file_url: SAMPLE_MODELS + 'RobotExpressive.glb', glb_url: SAMPLE_MODELS + 'RobotExpressive.glb', placement: 'floor', size: 'medium', audio_url: '', video_url: '' },
-      { id: 'itm_demo_3', kind: 'model', title: 'الحصان — وسيلة نقل قديمة', text_ar: 'قبل السيارات والطائرات كان الحصان من أهم وسائل النقل. قارن بين سرعته وسرعة الصاروخ!', text_en: 'Before cars and planes, the horse was a key means of transport. Compare its speed with a rocket!', file_url: SAMPLE_MODELS + 'Horse.glb', glb_url: SAMPLE_MODELS + 'Horse.glb', placement: 'floor', size: 'large', audio_url: '', video_url: 'https://www.youtube.com/watch?v=libKVRa01X8' },
-      { id: 'itm_demo_4', kind: 'image', title: 'لوحة المجموعة الشمسية', text_ar: 'هذه لوحة توضيحية: الشمس في الوسط، وتدور حولها ثمانية كواكب. جرّب عرضها على حيطة الفصل!', text_en: 'Illustrated panel: the Sun in the middle with eight planets orbiting around it.', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: 'المجموعة الشمسية ☀️' },
+      { id: 'itm_demo_3', kind: 'model', title: 'الحصان — وسيلة نقل قديمة', text_ar: 'قبل السيارات والطائرات كان الحصان من أهم وسائل النقل. قارن بين سرعته وسرعة الصاروخ!', text_en: 'Before cars and planes, the horse was a key means of transport. Compare its speed with a rocket!', file_url: SAMPLE_MODELS + 'Horse.glb', glb_url: SAMPLE_MODELS + 'Horse.glb', placement: 'floor', size: 'large', audio_url: '', video_url: 'https://www.youtube.com/watch?v=libKVRa01X8', quiz: { q: 'ما فائدة الحصان قديمًا؟', choices: [ { t: 'وسيلة نقل', ok: true, pos: [0, 1.0, 0] }, { t: 'مصدر للكهرباء', ok: false, pos: [0.55, 1.15, 0] }, { t: 'آلة حاسبة', ok: false, pos: [-0.6, 1.0, 0] } ] } },
+      { id: 'itm_demo_4', kind: 'image', title: 'لوحة المجموعة الشمسية', text_ar: 'هذه لوحة توضيحية: الشمس في الوسط، وتدور حولها ثمانية كواكب. جرّب عرضها على حيطة الفصل!', text_en: 'Illustrated panel: the Sun in the middle with eight planets orbiting around it.', file_url: '', glb_url: '', placement: 'wall', size: 'large', audio_url: '', video_url: '', textPanel: 'المجموعة الشمسية ☀️', quiz: { q: 'كم عدد كواكب المجموعة الشمسية؟', choices: [ { t: '8 كواكب', ok: true }, { t: '5 كواكب', ok: false }, { t: '10 كواكب', ok: false } ] } },
     ],
   };
 }
@@ -175,6 +192,7 @@ function itemRow(it, lessonId, sortOrder) {
     file_url: it.file_url || '', glb_url: it.glb_url || '',
     placement: it.placement, size: it.size,
     audio_url: it.audio_url || '', video_url: it.video_url || '',
+    quiz: it.quiz || null,
   };
 }
 
@@ -201,7 +219,7 @@ async function recordVisit(path) {
 }
 
 /* ================= التنقّل بين الصفحات ================= */
-const VIEWS = ['view-home', 'view-auth', 'view-dashboard', 'view-editor', 'view-student', 'view-print'];
+const VIEWS = ['view-home', 'view-auth', 'view-dashboard', 'view-editor', 'view-student', 'view-print', 'view-library'];
 function showView(id) {
   VIEWS.forEach((v) => $(v).classList.toggle('hidden', v !== id));
   window.scrollTo({ top: 0 });
@@ -343,12 +361,14 @@ async function renderDashboard() {
           <button class="btn btn-primary btn-sm" onclick="window.__editLesson('${l.id}')">✏️ تحرير وعناصر</button>
           <button class="btn btn-ghost btn-sm" onclick="window.__openStudent('${l.id}')">👀 عرض الطالب</button>
           <button class="btn btn-ghost btn-sm" onclick="window.__openPrint('${l.id}')">🖨️ طباعة QR</button>
+          <button class="btn btn-ghost btn-sm" onclick="window.__startLive('${l.id}')">📡 حصة مباشرة</button>
           <button class="btn btn-danger btn-sm" onclick="window.__deleteLesson('${l.id}')">🗑️ حذف</button>
         </div>
       </div>
     </div>`).join('') : '<div class="card">لا توجد دروس بعد — أنشئ أول درس من الأعلى 👆</div>';
   if (isAdmin()) renderAdmin();
   else $('adminSection').classList.add('hidden');
+  renderReports();
 }
 window.__editLesson = (id) => openEditor(id);
 window.__openStudent = (id) => { location.hash = ''; history.pushState(null, '', '?lesson=' + id); openStudent(id); };
@@ -467,6 +487,7 @@ function renderItems() {
         <span class="badge">${SIZE_LABEL[it.size] || it.size}</span>
         ${it.audio_url ? '<span class="badge">🔊 صوت</span>' : ''}
         ${it.video_url ? '<span class="badge">🎬 فيديو</span>' : ''}
+        ${it.quiz ? '<span class="badge">❓ سؤال</span>' : ''}
         <p class="hint">${esc(it.text_ar || '')}</p>
         <div class="row">
           <button class="btn btn-ghost btn-sm" onclick="window.__moveItem('${it.id}',-1)" ${i === 0 ? 'disabled' : ''}>⬆️ فوق</button>
@@ -507,6 +528,7 @@ window.__editItem = (id) => {
   editingItemId = id;
   $('itemTitle').value = it.title; $('itemTextAr').value = it.text_ar || '';
   $('itemTextEn').value = it.text_en || ''; $('itemVideo').value = it.video_url || '';
+  fillQuizForm(it.quiz);
   currentPlacement = it.placement; currentSize = it.size; currentKind = it.kind;
   document.querySelectorAll('#placementToggle button').forEach((b) => b.classList.toggle('active', b.dataset.placement === it.placement));
   document.querySelectorAll('#sizeSeg button').forEach((b) => b.classList.toggle('active', b.dataset.size === it.size));
@@ -567,6 +589,7 @@ async function addItem() {
         text_en: $('itemTextEn').value.trim(), placement: currentPlacement, size: currentSize,
         file_url: fileUrl || old.file_url, glb_url: glbUrl || old.glb_url,
         audio_url: audioUrl || old.audio_url, video_url: $('itemVideo').value.trim(),
+        quiz: readQuizForm(),
       };
       if (isRemote()) {
         const { error } = await supabase.from('items').update(itemRow(updated, currentLessonId, lesson.items.indexOf(old))).eq('id', editingItemId);
@@ -580,6 +603,7 @@ async function addItem() {
         title, text_ar: $('itemTextAr').value.trim(), text_en: $('itemTextEn').value.trim(),
         file_url: fileUrl, glb_url: glbUrl, placement: currentPlacement, size: currentSize,
         audio_url: audioUrl, video_url: $('itemVideo').value.trim(),
+        quiz: readQuizForm(),
       };
       if (isRemote()) {
         const { error } = await supabase.from('items').insert(itemRow(item, currentLessonId, lesson.items.length));
@@ -592,6 +616,7 @@ async function addItem() {
     showMsg($('editorMsg'), 'تم حفظ العنصر بنجاح ✅', true);
     $('itemTitle').value = ''; $('itemTextAr').value = ''; $('itemTextEn').value = ''; $('itemVideo').value = '';
     $('itemFile').value = ''; $('itemAudio').value = ''; $('fileInfo').textContent = '';
+    clearQuizForm();
     renderItems();
   } catch (e) { showMsg($('editorMsg'), e.message || 'فشل حفظ العنصر'); }
   finally { btn.disabled = false; setTimeout(() => prog.classList.add('hidden'), 600); }
@@ -663,6 +688,7 @@ async function openStudent(id) {
     try { lesson = await fetchPublicLesson(id); } catch (e) { console.warn('Supabase lesson fetch failed', e); }
   }
   if (!lesson) lesson = findLocalLesson(id);
+  if (!lesson) lesson = await findLibraryLesson(id);
   if (!lesson && id === 'les_demo_solar') lesson = buildDemoLesson();
   if (!lesson) { alert('الدرس غير موجود'); return showView('view-home'); }
   // عدّاد المشاهدات + تسجيل الزيارة
@@ -681,6 +707,7 @@ async function openStudent(id) {
   if (_local) { _local.views = (_local.views || 0) + 1; saveLessons(_lessons); lesson.views = _local.views; }
   else { lesson.views = (lesson.views || 0) + 1; }
   studentLesson = lesson; studentIndex = 0;
+  startStudentSession(lesson);
   $('studentTitle').textContent = lesson.title;
   $('studentMeta').textContent = `${lesson.subject || ''} • ${lesson.grade || ''} • 👁️ ${lesson.views || 0} مشاهدة`;
   showView('view-student');
@@ -712,14 +739,16 @@ async function renderStudentItem() {
   const scale = SIZE_M[it.size] || 1;
   const yt = youtubeId(it.video_url);
   $('itemDots').textContent = `${studentIndex + 1} / ${items.length}`;
-  $('prevItemBtn').disabled = studentIndex === 0;
-  $('nextItemBtn').disabled = studentIndex === items.length - 1;
+  const liveGuest = liveRole === 'guest';
+  $('prevItemBtn').disabled = studentIndex === 0 || liveGuest;
+  $('nextItemBtn').disabled = studentIndex === items.length - 1 || liveGuest;
   $('studentItems').innerHTML = `
     <article class="item-card">
       <model-viewer id="mv" src="${esc(src)}" alt="${esc(it.title)}"
         ar ar-modes="webxr scene-viewer quick-look" ar-placement="${it.placement === 'floor' ? 'floor' : 'wall'}"
         ar-scale="fixed" camera-controls auto-rotate shadow
         style="--ar-scale:${scale}" data-size-m="${scale}">
+        ${hotspotsHtml(it)}
       </model-viewer>
       <div class="item-body">
         <h2>${esc(it.title)}</h2>
@@ -731,6 +760,7 @@ async function renderStudentItem() {
         ${yt ? `<div class="video-wrap"><iframe src="https://www.youtube.com/embed/${yt}" allowfullscreen loading="lazy" title="فيديو الشرح"></iframe></div>`
           : (it.video_url ? `<p style="margin-top:12px"><a href="${esc(it.video_url)}" target="_blank" rel="noopener">🎬 شاهد الفيديو</a></p>` : '')}
         <p class="hint" style="margin-top:10px">الحجم: ${SIZE_LABEL[it.size] || ''} • المكان: ${it.placement === 'floor' ? 'على الأرض' : 'على الحيطة'}</p>
+        ${quizHtml(it)}
       </div>
     </article>`;
   const mv = $('mv');
@@ -745,6 +775,319 @@ async function renderStudentItem() {
   // Lazy-load: النموذج الحالي فقط يُبنى — باقي العناصر لا تُحمّل حتى التنقّل إليها
 }
 
+/* ================= الإصدار 2: المكتبة + الأسئلة + الحصة المباشرة + التقارير ================= */
+
+// ---------- 1) مكتبة المنهج ----------
+let libFilters = { grade: '', subject: '', term: '' };
+async function openLibrary() {
+  showView('view-library');
+  const lib = await loadLibrary();
+  if (!lib) { $('libraryGrid').innerHTML = '<div class="card">تعذّر تحميل المكتبة — تحقق من الاتصال وأعد المحاولة.</div>'; return; }
+  const fill = (id, items, all) => {
+    const sel = $(id);
+    if (sel.options.length > 1) return;
+    items.forEach((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+    sel.value = all;
+  };
+  fill('libGrade', lib.grades, libFilters.grade);
+  fill('libSubject', lib.subjects, libFilters.subject);
+  fill('libTerm', lib.terms, libFilters.term);
+  $('libGrade').onchange = (e) => { libFilters.grade = e.target.value; renderLibrary(); };
+  $('libSubject').onchange = (e) => { libFilters.subject = e.target.value; renderLibrary(); };
+  $('libTerm').onchange = (e) => { libFilters.term = e.target.value; renderLibrary(); };
+  renderLibrary();
+}
+function renderLibrary() {
+  const lib = libraryCache; if (!lib) return;
+  const list = lib.lessons.filter((l) =>
+    (!libFilters.grade || l.grade === libFilters.grade) &&
+    (!libFilters.subject || l.subject === libFilters.subject) &&
+    (!libFilters.term || l.term === libFilters.term));
+  $('libraryCount').textContent = `📚 ${list.length} درس — اختر واطبع الـ QR على طول`;
+  $('libraryGrid').innerHTML = list.length ? list.map((l) => `
+    <div class="card lib-card">
+      <div class="thumb">📚</div>
+      <div class="lesson-meta">
+        <h3>${esc(l.title)}</h3>
+        <span class="badge">${esc(l.subject)}</span>
+        <span class="badge">${esc(l.grade)}</span>
+        <span class="badge">${esc(l.term)}</span>
+        <span class="badge orange">${l.items.length} عنصر</span>
+        <span class="badge">${l.items.filter((i) => i.quiz).length} سؤال</span>
+        <p class="hint">${esc(l.description || '')}</p>
+        <div class="row">
+          <button class="btn btn-primary btn-sm" onclick="window.__viewLibraryLesson('${l.id}')">👀 عرض</button>
+          <button class="btn btn-orange btn-sm" style="width:auto" onclick="window.__copyLibrary('${l.id}')">➕ أضف إلى دروسي</button>
+          <button class="btn btn-ghost btn-sm" onclick="window.__printLibrary('${l.id}')">🖨️ طباعة QR</button>
+        </div>
+      </div>
+    </div>`).join('') : '<div class="card">لا توجد دروس مطابقة — جرّب تصفية مختلفة.</div>';
+}
+async function copyLibraryLesson(id) {
+  const src = await findLibraryLesson(id);
+  if (!src) { alert('الدرس غير موجود في المكتبة'); return; }
+  const sess = getSession();
+  if (!sess) { showView('view-auth'); return; }
+  const lesson = {
+    id: uid('les'), teacher_id: isRemote() ? sess.id : (sess?.email || 'local'),
+    title: src.title, subject: src.subject, grade: src.grade,
+    description: (src.description || '') + ' (من مكتبة المنهج)',
+    views: 0, created_at: new Date().toISOString(),
+    items: src.items.map((it) => ({ ...it, id: uid('itm') })),
+  };
+  if (isRemote()) {
+    // لوحات النص لا تُحفظ في جدول items — حوّلها إلى .glb وارفعها للتخزين أولًا
+    try {
+      const { textPanelToGlb } = await import('./lib/image-to-glb.js');
+      for (const it of lesson.items) {
+        if (it.textPanel && !it.glb_url) {
+          const { blob } = await textPanelToGlb(it.textPanel, { bg: '#4F46E5' });
+          it.glb_url = await uploadToStorage(new File([blob], 'panel.glb', { type: 'model/gltf-binary' }), 'panel.glb', lesson.id);
+          it.file_url = it.glb_url;
+        }
+      }
+    } catch (e) { alert('تعذّر تجهيز لوحات الدرس: ' + e.message); return; }
+    const { error } = await supabase.from('lessons').insert({
+      id: lesson.id, teacher_id: sess.id, title: lesson.title,
+      subject: lesson.subject, grade: lesson.grade, description: lesson.description,
+    });
+    if (error) { alert('تعذّر نسخ الدرس: ' + friendlyAuthError(error)); return; }
+    const { error: e2 } = await supabase.from('items').insert(lesson.items.map((it, i) => itemRow(it, lesson.id, i)));
+    if (e2) { alert('تعذّر نسخ العناصر: ' + friendlyAuthError(e2)); return; }
+  }
+  const lessons = getLessons(); lessons.unshift(lesson); saveLessons(lessons);
+  renderDashboard(); openEditor(lesson.id);
+}
+window.__copyLibrary = copyLibraryLesson;
+window.__viewLibraryLesson = (id) => { history.pushState(null, '', '?lesson=' + id); openStudent(id); };
+window.__printLibrary = (id) => { history.pushState(null, '', '?print=' + id); openPrint(id); };
+
+// ---------- 2) أسئلة الفهم داخل الـ AR ----------
+let quizAnswers = {}; // itemId -> {choice, correct}
+function quizTotals() {
+  const items = (studentLesson?.items || []).filter((it) => it.quiz);
+  const answered = items.filter((it) => quizAnswers[it.id]);
+  const correct = answered.filter((it) => quizAnswers[it.id].correct).length;
+  return { score: correct, total: items.length, answered: answered.length };
+}
+function hotspotsHtml(it) {
+  if (it.kind !== 'model' || !it.quiz) return '';
+  const ans = quizAnswers[it.id];
+  return it.quiz.choices.map((c, i) => {
+    if (!c.pos) return '';
+    const cls = ans ? (c.ok ? 'correct' : (ans.choice === i ? 'wrong' : '')) : '';
+    return `<button slot="hotspot-${i}" data-position="${c.pos.join(' ')}" class="hotspot ${cls}" type="button" onclick="window.__answerQuiz('${it.id}', ${i})">${esc(c.t)}</button>`;
+  }).join('');
+}
+function quizHtml(it) {
+  const q = it?.quiz; if (!q) return '';
+  const ans = quizAnswers[it.id];
+  return `<div class="quiz-block">
+    <h3>❓ ${esc(q.q)}</h3>
+    <div class="quiz-choices">${q.choices.map((c, i) => {
+      const cls = ans ? (c.ok ? 'correct' : (ans.choice === i ? 'wrong' : '')) : '';
+      return `<button class="btn btn-ghost quiz-choice ${cls}" type="button" onclick="window.__answerQuiz('${it.id}', ${i})" ${ans ? 'disabled' : ''}>${esc(c.t)}</button>`;
+    }).join('')}</div>
+    ${ans
+      ? `<p class="quiz-result ${ans.correct ? 'ok' : 'bad'}">${ans.correct ? '✅ إجابة صحيحة! أحسنت.' : '❌ إجابة غير صحيحة — الإجابة الصحيحة مظللة بالأخضر.'}</p>`
+      : '<p class="hint">دوس على الجزء الصح في المجسّم، أو اختر من الأزرار.</p>'}
+  </div>`;
+}
+window.__answerQuiz = (itemId, idx) => {
+  if (quizAnswers[itemId] || !studentLesson) return;
+  const it = studentLesson.items.find((x) => x.id === itemId);
+  if (!it?.quiz) return;
+  const choice = it.quiz.choices[idx];
+  if (!choice) return;
+  quizAnswers[itemId] = { choice: idx, correct: !!choice.ok };
+  renderStudentItem();
+  const t = quizTotals();
+  if (t.answered === t.total && t.total > 0) {
+    setTimeout(() => alert(`🎉 أنهيت كل الأسئلة! نتيجتك: ${t.score} من ${t.total} — اضغط «إنهاء الدرس» لحفظ تقريرك.`), 350);
+  }
+};
+// حقول سؤال الفهم في محرر العناصر
+function readQuizForm() {
+  const q = $('quizQ').value.trim();
+  const cs = [$('quizC1').value.trim(), $('quizC2').value.trim(), $('quizC3').value.trim()].filter(Boolean);
+  if (!q || cs.length < 2) return null;
+  const ok = Math.min(parseInt($('quizCorrect').value || '0', 10) || 0, cs.length - 1);
+  return { q, choices: cs.map((t, i) => ({ t, ok: i === ok })) };
+}
+function fillQuizForm(quiz) {
+  $('quizQ').value = quiz?.q || '';
+  const cs = quiz?.choices || [];
+  $('quizC1').value = cs[0]?.t || ''; $('quizC2').value = cs[1]?.t || ''; $('quizC3').value = cs[2]?.t || '';
+  $('quizCorrect').value = String(Math.max(0, cs.findIndex((c) => c.ok)));
+}
+function clearQuizForm() {
+  $('quizQ').value = ''; $('quizC1').value = ''; $('quizC2').value = ''; $('quizC3').value = ''; $('quizCorrect').value = '0';
+}
+
+// ---------- 3) الحصة المباشرة (المعلّم يتحكم — الطلاب يتبعونه) ----------
+let liveChannel = null, liveRole = null, liveCode = null;
+function updateLiveBanner() {
+  const bar = $('liveBanner'); if (!bar) return;
+  const joinRow = $('liveJoinRow');
+  if (liveRole === 'host') {
+    bar.classList.remove('hidden');
+    bar.innerHTML = `📡 <b>حصة مباشرة جارية</b> — كود الطلاب: <span class="code" dir="ltr">${liveCode}</span> — قلّب بين العناصر من الأسفل وكل موبايلات الطلاب تتقلب معك. <button class="btn btn-danger btn-sm" type="button" onclick="window.__leaveLive()">إنهاء الحصة</button>`;
+    if (joinRow) joinRow.classList.add('hidden');
+  } else if (liveRole === 'guest') {
+    bar.classList.remove('hidden');
+    bar.innerHTML = `🎛️ <b>أنت في حصة مباشرة</b> — المعلّم يتحكم في العرض الآن، وموبايلك يتقلب معه تلقائيًا. <button class="btn btn-ghost btn-sm" type="button" onclick="window.__leaveLive()">مغادرة الحصة</button>`;
+    if (joinRow) joinRow.classList.add('hidden');
+  } else {
+    bar.classList.add('hidden');
+    if (joinRow) joinRow.classList.remove('hidden');
+  }
+}
+async function startLive(lessonId) {
+  if (!supabase) { alert('وضع الحصة المباشرة يحتاج اتصالًا بالإنترنت — فعّل Supabase أولًا.'); return; }
+  const code = String(Math.floor(1000 + Math.random() * 9000));
+  await openStudent(lessonId);
+  liveRole = 'host'; liveCode = code;
+  liveChannel = supabase.channel('live-' + code);
+  liveChannel.subscribe();
+  updateLiveBanner(); renderStudentItem();
+}
+async function joinLive() {
+  const code = ($('liveCodeInput').value || '').trim();
+  if (!/^\d{4}$/.test(code)) { alert('أدخل كود الحصة المكوّن من 4 أرقام'); return; }
+  if (!supabase) { alert('وضع الحصة المباشرة يحتاج اتصالًا بالإنترنت.'); return; }
+  if (liveChannel) leaveLive();
+  liveRole = 'guest'; liveCode = code;
+  liveChannel = supabase.channel('live-' + code);
+  liveChannel
+    .on('broadcast', { event: 'goto' }, ({ payload }) => {
+      if (studentLesson && typeof payload?.index === 'number') {
+        studentIndex = Math.max(0, Math.min(payload.index, studentLesson.items.length - 1));
+        renderStudentItem();
+      }
+    })
+    .on('broadcast', { event: 'end' }, () => { leaveLive(); alert('انتهت الحصة المباشرة — يمكنك الآن تصفّح الدرس بحرية.'); })
+    .subscribe();
+  updateLiveBanner(); renderStudentItem();
+}
+function leaveLive() {
+  if (liveRole === 'host' && liveChannel) {
+    try { liveChannel.send({ type: 'broadcast', event: 'end', payload: {} }); } catch {}
+  }
+  if (liveChannel) { try { supabase.removeChannel(liveChannel); } catch {} liveChannel = null; }
+  liveRole = null; liveCode = null;
+  updateLiveBanner(); renderStudentItem();
+}
+function broadcastGoto() {
+  if (liveRole === 'host' && liveChannel) {
+    try { liveChannel.send({ type: 'broadcast', event: 'goto', payload: { index: studentIndex } }); } catch {}
+  }
+}
+function navStudent(dir) {
+  if (liveRole === 'guest') return; // المعلّم يتحكم أثناء الحصة
+  if (!studentLesson) return;
+  const n = studentIndex + dir;
+  if (n < 0 || n >= studentLesson.items.length) return;
+  studentIndex = n; renderStudentItem(); broadcastGoto();
+}
+window.__startLive = startLive;
+window.__joinLive = joinLive;
+window.__leaveLive = leaveLive;
+
+// ---------- 4) جلسة الطالب + تقارير المعلّم ----------
+let activitySeconds = 0, activityTimer = null, activitySaved = false;
+function studentName() { try { return localStorage.getItem(LS_STUDENT) || ''; } catch { return ''; } }
+function startStudentSession(lesson) {
+  quizAnswers = {}; activitySeconds = 0; activitySaved = false;
+  clearInterval(activityTimer);
+  activityTimer = setInterval(() => { if (document.visibilityState === 'visible') activitySeconds += 5; }, 5000);
+  const bar = $('studentNameBar'); if (!bar) return;
+  const name = studentName();
+  if (name) {
+    bar.innerHTML = `<span>👤 أهلًا <b>${esc(name)}</b> — نتيجتك ووقتك في هذا الدرس يُحفظان في تقرير المعلّم.</span> <button class="btn btn-ghost btn-sm" type="button" onclick="window.__changeStudentName()">تغيير الاسم</button>`;
+  } else {
+    bar.innerHTML = `<input id="studentNameInput" placeholder="اكتب اسمك (مثال: عمر أحمد)" style="max-width:260px"> <button class="btn btn-primary btn-sm" type="button" onclick="window.__saveStudentName()">ابدأ الدرس</button>`;
+  }
+  updateLiveBanner();
+}
+window.__saveStudentName = () => {
+  const v = $('studentNameInput').value.trim();
+  if (!v) { alert('اكتب اسمك أولًا — حتى يظهر في تقرير المعلّم'); return; }
+  try { localStorage.setItem(LS_STUDENT, v); } catch {}
+  startStudentSession(studentLesson);
+};
+window.__changeStudentName = () => {
+  try { localStorage.removeItem(LS_STUDENT); } catch {}
+  startStudentSession(studentLesson);
+};
+async function saveActivity() {
+  if (activitySaved || !studentLesson) return;
+  activitySaved = true;
+  const t = quizTotals();
+  const row = {
+    lesson_id: studentLesson.id, student_name: studentName() || 'طالب بدون اسم',
+    seconds: activitySeconds, quiz_score: t.score, quiz_total: t.total,
+    created_at: new Date().toISOString(),
+  };
+  const list = loadLocal(LS_ACTIVITY, []); list.push(row); saveLocal(LS_ACTIVITY, list.slice(-500));
+  if (supabase) {
+    try {
+      await supabase.from('student_activity').insert({
+        lesson_id: row.lesson_id, student_name: row.student_name,
+        seconds: row.seconds, quiz_score: row.quiz_score, quiz_total: row.quiz_total,
+      });
+    } catch {}
+  }
+}
+window.__finishLesson = async () => {
+  await saveActivity();
+  const t = quizTotals();
+  const mins = Math.max(1, Math.round(activitySeconds / 60));
+  alert(`🏁 انتهى الدرس!\n⏱️ قضيت حوالي ${mins} دقيقة\n❓ نتيجتك في الأسئلة: ${t.total ? `${t.score} من ${t.total}` : 'لا توجد أسئلة في هذا الدرس'}\nتم حفظ تقريرك عند المعلّم ✅`);
+};
+function fmtMins(s) { const m = Math.floor((s || 0) / 60); return m < 1 ? 'أقل من دقيقة' : m + ' دقيقة'; }
+let reportAggCache = [];
+async function loadReports() {
+  let rows = loadLocal(LS_ACTIVITY, []);
+  if (supabase && getSession()) {
+    try {
+      const lessons = await loadLessons();
+      const ids = lessons.map((l) => l.id);
+      if (ids.length) {
+        const { data } = await supabase.from('student_activity').select('*').in('lesson_id', ids).order('created_at', { ascending: false }).limit(300);
+        if (data?.length) rows = [...data.map((r) => ({ ...r, seconds: r.seconds || 0 })), ...rows];
+      }
+    } catch {}
+  }
+  return rows;
+}
+async function renderReports() {
+  const box = $('reportsList'); if (!box) return;
+  const rows = await loadReports();
+  const lessons = getLessons();
+  const title = (id) => lessons.find((l) => l.id === id)?.title || id;
+  const agg = {};
+  rows.forEach((r) => {
+    const k = (r.student_name || '؟') + '|' + r.lesson_id;
+    const a = agg[k] || (agg[k] = { student: r.student_name || '؟', lesson: r.lesson_id, seconds: 0, best: 0, total: 0, count: 0, last: '' });
+    a.seconds += r.seconds || 0; a.count++;
+    if (r.quiz_total) { a.best = Math.max(a.best, Math.round((r.quiz_score / r.quiz_total) * 100)); a.total++; }
+    if (!a.last || (r.created_at || '') > a.last) a.last = r.created_at || '';
+  });
+  reportAggCache = Object.values(agg).sort((a, b) => (b.last || '').localeCompare(a.last || ''));
+  box.innerHTML = reportAggCache.length ? `<div class="table-wrap"><table class="admin-table">
+    <tr><th>الطالب</th><th>الدرس</th><th>الوقت</th><th>أفضل نتيجة</th><th>آخر نشاط</th><th></th></tr>
+    ${reportAggCache.map((a, i) => `<tr><td>${esc(a.student)}</td><td>${esc(title(a.lesson))}</td><td>${fmtMins(a.seconds)}</td><td>${a.total ? a.best + '%' : '—'}</td><td>${a.last ? a.last.slice(0, 10) : ''}</td><td><button class="btn btn-ghost btn-sm" type="button" onclick="window.__waReport(${i})">📲 واتساب لولي الأمر</button></td></tr>`).join('')}
+  </table></div>` : '<p class="hint">لا توجد تقارير بعد — ستظهر هنا بعد أن يفتح الطلاب دروسك ويجيبوا على الأسئلة.</p>';
+}
+window.__waReport = (i) => {
+  const a = reportAggCache[i]; if (!a) return;
+  const title = getLessons().find((l) => l.id === a.lesson)?.title || a.lesson;
+  const phone = prompt('رقم واتساب ولي الأمر (بالصيغة الدولية، مثال: 2010xxxxxxx):');
+  if (!phone) return;
+  const text = `📚 تقرير درسك AR — الطالب: ${a.student}\nالدرس: ${title}\nالوقت داخل الدرس: ${fmtMins(a.seconds)}\nأفضل نتيجة في الأسئلة: ${a.total ? a.best + '%' : 'لم يجب على أسئلة بعد'}`;
+  window.open('https://wa.me/' + phone.replace(/\D/g, '') + '?text=' + encodeURIComponent(text), '_blank');
+};
+
 /* ================= صفحة الطباعة ================= */
 async function openPrint(id) {
   let lesson = null;
@@ -752,6 +1095,7 @@ async function openPrint(id) {
     try { lesson = await fetchPublicLesson(id); } catch {}
   }
   if (!lesson) lesson = findLocalLesson(id);
+  if (!lesson) lesson = await findLibraryLesson(id);
   if (!lesson && id === 'les_demo_solar') lesson = buildDemoLesson();
   showView('view-print');
   const sheet = $('printSheet');
@@ -801,6 +1145,7 @@ function route() {
   const q = new URLSearchParams(location.search);
   if (q.get('lesson')) return openStudent(q.get('lesson'));
   if (q.get('print')) return openPrint(q.get('print'));
+  if (q.get('library')) return openLibrary();
   if (getSession()) return renderDashboard();
   showView('view-home');
   recordVisit('/'); // زيارة الصفحة الرئيسية (صف واحد لكل زائر/يوم)
@@ -847,8 +1192,13 @@ async function init() {
   $('backToDash').onclick = renderDashboard;
   $('backFromPrint').onclick = renderDashboard;
   $('doPrintBtn').onclick = () => window.print();
-  $('prevItemBtn').onclick = () => { if (studentIndex > 0) { studentIndex--; renderStudentItem(); } };
-  $('nextItemBtn').onclick = () => { if (studentLesson && studentIndex < studentLesson.items.length - 1) { studentIndex++; renderStudentItem(); } };
+  $('prevItemBtn').onclick = () => navStudent(-1);
+  $('nextItemBtn').onclick = () => navStudent(1);
+  $('joinLiveBtn').onclick = joinLive;
+  $('finishLessonBtn').onclick = window.__finishLesson;
+  $('ctaLibrary').onclick = () => { history.pushState(null, '', '?library=1'); openLibrary(); };
+  $('dashLibraryBtn').onclick = () => { history.pushState(null, '', '?library=1'); openLibrary(); };
+  window.addEventListener('pagehide', () => { if (studentLesson && !activitySaved) saveActivity(); });
   $('ctaTeacher').onclick = () => { getSession() ? renderDashboard() : showView('view-auth'); };
   $('ctaDemo').onclick = () => { history.pushState(null, '', '?lesson=les_demo_solar'); openStudent('les_demo_solar'); };
   $('navHomeBtn').onclick = () => { history.pushState(null, '', location.pathname); showView('view-home'); };

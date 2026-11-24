@@ -147,3 +147,31 @@ footer{background:var(--navy);color:var(--light-indigo);text-align:center;paddin
   .print-sheet .steps{text-align:right;max-width:420px;margin:0 auto;font-size:17px}
 }
 .print-sheet{display:none}
+
+/* ===== الإصدار 2: المكتبة + الأسئلة + الحصة المباشرة + التقارير ===== */
+
+/* مكتبة المنهج */
+#libraryGrid{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:640px){#libraryGrid{grid-template-columns:1fr 1fr}}
+.lib-card{display:flex;gap:14px;align-items:flex-start}
+
+/* أسئلة الفهم داخل الـ AR */
+.hotspot{background:var(--orange2);color:#fff;border:2px solid #fff;border-radius:999px;padding:6px 14px;font-weight:800;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35);white-space:nowrap}
+.hotspot.correct{background:var(--green)}
+.hotspot.wrong{background:var(--red)}
+.quiz-block{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
+.quiz-block h3{font-size:18px}
+.quiz-choices{display:grid;gap:10px}
+.quiz-choice{justify-content:flex-start;text-align:right}
+.quiz-choice.correct{background:#DCFCE7;border-color:var(--green);color:var(--green)}
+.quiz-choice.wrong{background:#FEE2E2;border-color:var(--red);color:var(--red)}
+.quiz-result{font-weight:800;margin:10px 0 0}
+.quiz-result.ok{color:var(--green)}
+.quiz-result.bad{color:var(--red)}
+
+/* الحصة المباشرة + شريط اسم الطالب */
+.live-banner{background:var(--navy);color:#fff;border-radius:14px;padding:14px 18px;margin:12px 0;font-weight:700}
+.live-banner .code{font-family:'Space Grotesk',sans-serif;font-size:26px;letter-spacing:4px;background:var(--orange2);border-radius:10px;padding:2px 14px;display:inline-block;margin:0 6px}
+.live-banner .btn{margin-inline-start:10px}
+.name-bar{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin:12px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.name-bar input{flex:1;min-width:180px}
