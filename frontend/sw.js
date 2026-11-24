@@ -1,8 +1,10 @@
-/* درسك AR — Service Worker: cache-first للواجهة، network-first للـ API */
-const CACHE = 'darsak-ar-v1';
+/* درسك AR — Service Worker: cache-first للواجهة، network-first للـ API
+   مهم: عند أي تغيير في ملفات الواجهة ارفع رقم CACHE (v2, v3...) حتى يحذف
+   المتصفح النسخة القديمة — وإلا يبقى يخدم نسخة قديمة من الكاش إلى الأبد. */
+const CACHE = 'darsak-ar-v2';
 const SHELL = [
   '/', '/index.html', '/styles.css', '/app.js',
-  '/lib/image-to-glb.js', '/manifest.webmanifest',
+  '/lib/image-to-glb.js', '/lib/qrcode-generator.min.js', '/manifest.webmanifest',
   '/public/darsak-ar-icon.png', '/public/favicon.png'
 ];
 
@@ -20,6 +22,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
+  // API: network-first (بيانات الدروس يجب أن تكون حديثة)
   if (url.pathname.startsWith('/api/')) {
     e.respondWith(
       fetch(e.request).then((res) => {
@@ -30,6 +33,7 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
+  // الواجهة والملفات الثابتة: cache-first ثم الشبكة
   e.respondWith(
     caches.match(e.request).then((cached) => {
       if (cached) return cached;
