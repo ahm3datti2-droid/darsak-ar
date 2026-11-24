@@ -13,8 +13,8 @@
 <h2>أ) تحويل اللوحات النصية إلى GLB</h2>
 <button id="runPanels" type="button">تشغيل اختبار اللوحات</button>
 <pre id="panelOut">لم يُشغَّل بعد</pre>
-<h2>ب) التفكيك (رائد الفضاء)</h2>
-<model-viewer id="mv" src="https://modelviewer.dev/shared-assets/models/Astronaut.glb" camera-controls auto-rotate style="width:100%;height:320px"></model-viewer>
+<h2>ب) التفكيك (الروبوت — متعدد القطع)</h2>
+<model-viewer id="mv" src="https://modelviewer.dev/shared-assets/models/RobotExpressive.glb" camera-controls auto-rotate style="width:100%;height:320px"></model-viewer>
 <button id="runExplode" type="button">تشغيل اختبار التفكيك</button>
 <pre id="explodeOut">لم يُشغَّل بعد</pre>
 <script type="module">
@@ -42,15 +42,13 @@ document.getElementById('runExplode').onclick = async () => {
     const mv = document.getElementById('mv');
     log(`mv exists: ${!!mv}`);
     log(`mv.model: ${mv.model ? mv.model.constructor.name : String(mv.model)}`);
-    log(`mv.model.scene: ${mv.model && mv.model.scene ? mv.model.scene.constructor.name : String(mv.model && mv.model.scene)}`);
-    log(`mv.scene: ${mv.scene ? mv.scene.constructor.name : String(mv.scene)}`);
-    // البحث عن المصفوفات الداخلية في mv.model التي تحتوي عقدًا لها .mesh
+    log(`cameraOrbit before: ${mv.cameraOrbit}`);
     let meshes = [];
     if (mv.model) {
       for (const sym of Object.getOwnPropertySymbols(mv.model)) {
         const v = mv.model[sym];
         if (Array.isArray(v) && v.length && v[0] && v[0].mesh && v[0].mesh.isMesh) {
-          meshes = v.map((n) => n.mesh);
+          meshes = v.map((n) => n.mesh).filter((m) => m && m.isMesh);
           log(`found meshes via symbol: ${sym.toString()} -> ${meshes.length} meshes`);
           break;
         }
@@ -59,40 +57,53 @@ document.getElementById('runExplode').onclick = async () => {
     if (!meshes.length) { log('NO MESHES FOUND — cannot explode'); return; }
     const THREE = await import('three');
     const V3 = THREE.Vector3;
-    const model = meshes[0];
-    // الجذر: أعلى أب مشترك
     let root = meshes[0];
     while (root.parent && root.parent.isObject3D && root.parent.type !== 'Scene') root = root.parent;
-    log(`root: ${root.constructor.name} (${root.type})`);
     root.updateWorldMatrix(true, true);
-    const before = meshes[0].position.clone();
-    log(`first mesh pos before: ${before.toArray().map((v) => v.toFixed(3)).join(', ')}`);
-    const center = new V3();
-    let n = 0;
-    meshes.forEach((o) => {
-      if (!o.geometry) return;
-      o.geometry.computeBoundingBox();
-      const c = o.geometry.boundingBox.getCenter(new V3());
-      c.applyMatrix4(o.matrixWorld);
-      center.add(c); n++;
-    });
-    center.divideScalar(n);
-    meshes.forEach((o) => {
-      if (!o.userData.darsakOrig) o.userData.darsakOrig = o.position.clone();
-      o.geometry.computeBoundingBox();
-      const c = o.geometry.boundingBox.getCenter(new V3());
-      c.applyMatrix4(o.matrixWorld);
-      const dirW = c.sub(center);
-      if (dirW.lengthSq() < 1e-6) dirW.set(0, 1, 0);
-      dirW.normalize();
-      const parent = o.parent || root;
-      const dirL = dirW.clone().transformDirection(parent.matrixWorld.clone().invert());
-      o.position.copy(o.userData.darsakOrig).addScaledVector(dirL, 0.5);
-    });
-    const after = meshes[0].position.clone();
-    log(`first mesh pos after: ${after.toArray().map((v) => v.toFixed(3)).join(', ')}`);
-    log(`moved: ${after.distanceTo(before).toFixed(3)} m`);
-    log(after.distanceTo(before) > 0.01 ? 'EXPLODE PASS: meshes moved' : 'EXPLODE FAIL: meshes did not move');
+    const orig = meshes.map((o) => o.position.clone());
+    const explode = (factor) => {
+      const center = new V3();
+      let n = 0;
+      meshes.forEach((o) => {
+        if (!o.geometry) return;
+        o.geometry.computeBoundingBox();
+        const c = o.geometry.boundingBox.getCenter(new V3());
+        c.applyMatrix4(o.matrixWorld);
+        center.add(c); n++;
+      });
+      center.divideScalar(n);
+      meshes.forEach((o) => {
+        if (!o.userData.darsakOrig) o.userData.darsakOrig = o.position.clone();
+        o.geometry.computeBoundingBox();
+        const c = o.geometry.boundingBox.getCenter(new V3());
+        c.applyMatrix4(o.matrixWorld);
+        const dirW = c.sub(center);
+        if (dirW.lengthSq() < 1e-6) dirW.set(0, 1, 0);
+        dirW.normalize();
+        const parent = o.parent || root;
+        const dirL = dirW.clone().transformDirection(parent.matrixWorld.clone().invert());
+        o.position.copy(o.userData.darsakOrig).addScaledVector(dirL, factor);
+      });
+    };
+    // تفكيك + إبعاد الكاميرا (نفس منطق التطبيق)
+    explode(0.5);
+    const beforeOrbit = mv.cameraOrbit || '';
+    try {
+      const parts = (beforeOrbit || '0deg 75deg 100%').split(' ');
+      if (parts.length >= 3) parts[2] = '230%';
+      mv.cameraOrbit = parts.join(' ');
+      log(`cameraOrbit after explode: ${mv.cameraOrbit}`);
+    } catch (e) { log(`SETTING cameraOrbit THREW: ${e.message}`); }
+    log(`first mesh pos after explode: ${meshes[0].position.toArray().map((v) => v.toFixed(3)).join(', ')}`);
+    // إعادة التركيب + إرجاع الكاميرا
+    explode(0);
+    try { mv.cameraOrbit = beforeOrbit; log(`cameraOrbit after reassemble: ${mv.cameraOrbit}`); }
+    catch (e) { log(`RESTORING cameraOrbit THREW: ${e.message}`); }
+    let restored = true;
+    meshes.forEach((o, i) => { if (o.position.distanceTo(orig[i]) > 0.001) restored = false; });
+    log(`first mesh pos after reassemble: ${meshes[0].position.toArray().map((v) => v.toFixed(3)).join(', ')}`);
+    log(`positions restored: ${restored}`);
+    log(restored ? 'EXPLODE PASS: meshes moved and restored' : 'EXPLODE FAIL: positions did not restore');
   } catch (e) {
     log(`EXPLODE THREW: ${e.message}`);
   }
