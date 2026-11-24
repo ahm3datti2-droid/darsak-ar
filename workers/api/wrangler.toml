@@ -1,0 +1,23 @@
+name = "darsak-ar-api"
+main = "src/index.js"
+compatibility_date = "2026-11-24"
+
+# رابط عام اختياري: إذا كان لديك workers.dev فقم بتعيينه هنا
+# workers_dev = true
+
+[vars]
+# الرابط العام لحزمة R2 (من لوحة R2 ← Settings ← Public access / Custom domain)
+# مثال: https://pub-xxxxxxxxxxxxxxxx.r2.dev
+R2_PUBLIC_URL = ""
+# سر توقيع رموز الدخول — غيّره لنص عشوائي طويل من لوحة Worker ← Settings ← Variables
+JWT_SECRET = "change-me-to-a-long-random-secret"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "darsak-ar"
+# الصق هنا database_id الذي يطبعه: wrangler d1 create darsak-ar
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "darsak-ar-files"
