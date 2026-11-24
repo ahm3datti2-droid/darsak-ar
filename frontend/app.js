@@ -1398,6 +1398,20 @@ async function applyExplode(factor) {
     const dirL = dirW.clone().transformDirection(parent.matrixWorld.clone().invert());
     o.position.copy(o.userData.darsakOrig).addScaledVector(dirL, factor);
   }
+  // أبعد الكاميرا أثناء التفكيك حتى تبقى القطع المتباعدة داخل الإطار، وأعدها عند التركيب
+  try {
+    const mvEl = $('mv');
+    if (mvEl && mvEl.cameraOrbit !== undefined) {
+      if (factor > 0) {
+        if (!mvEl.dataset.origOrbit) mvEl.dataset.origOrbit = mvEl.cameraOrbit || '';
+        const parts = (mvEl.dataset.origOrbit || '0deg 75deg 100%').split(' ');
+        if (parts.length >= 3) parts[2] = '230%';
+        mvEl.cameraOrbit = parts.join(' ');
+      } else if (mvEl.dataset.origOrbit) {
+        mvEl.cameraOrbit = mvEl.dataset.origOrbit;
+      }
+    }
+  } catch {}
   explodeFactor = factor;
   return true;
 }
